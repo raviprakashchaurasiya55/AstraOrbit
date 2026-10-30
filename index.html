@@ -58,7 +58,8 @@ button.disconnect{background:#bd3d4a}
  background:#0a192b;padding:12px;border-radius:8px
 }
 canvas{max-height:250px}
-#cube{width:100%;height:300px}
+#cube{width:100%;height:300px;overflow:hidden;border-radius:8px}
+#cube canvas{max-height:none}
 .note{font-size:12px;color:#8ca6bf;line-height:1.6}
 .footer{text-align:center;margin-top:35px;color:#7891a9;font-size:12px}
 </style>
@@ -94,31 +95,26 @@ canvas{max-height:250px}
 <section class="section">
 <h2>ENVIRONMENTAL SENSORS</h2>
 <div class="grid">
-
  <div class="card">
   <small>DHT11 Temperature</small>
   <div class="value" id="temperature">0.00 °C</div>
   <small>Temperature</small>
  </div>
-
  <div class="card">
   <small>Humidity</small>
   <div class="value" id="humidity">0.00 %</div>
   <small>Relative Humidity</small>
  </div>
-
  <div class="card">
   <small>BMP280 Temperature</small>
   <div class="value" id="bmpTemperature">0.00 °C</div>
   <small>Pressure Sensor Temperature</small>
  </div>
-
  <div class="card">
   <small>Atmospheric Pressure</small>
   <div class="value" id="pressure">0.00 hPa</div>
   <small>BMP280</small>
  </div>
-
  <div class="card">
   <small>BMP280 Altitude</small>
   <div class="value" id="bmpAltitude">0.00 m</div>
@@ -128,7 +124,7 @@ canvas{max-height:250px}
 </section>
 
 <section class="section">
-<h2>MPU ACCELEROMETER</h2>
+<h2>MPU ACCELEROMETER - DYNAMIC ACCELERATION</h2>
 <div class="sensor-grid">
  <div class="axis">X <div class="value" id="ax">0.000</div><small>g</small></div>
  <div class="axis">Y <div class="value" id="ay">0.000</div><small>g</small></div>
@@ -181,7 +177,7 @@ canvas{max-height:250px}
 <h2>LIVE CUBESAT MOVEMENT</h2>
 <div class="panel">
  <div id="cube"></div>
- <p class="note">3D orientation follows actual Roll and Pitch values when valid MPU data is received. Drag to rotate the view.</p>
+ <p class="note">3D CubeSat orientation follows actual Roll and Pitch values received from the MPU. The model moves with the satellite telemetry.</p>
 </div>
 </section>
 
@@ -203,7 +199,6 @@ canvas{max-height:250px}
 <script>
 "use strict";
 
-// Initial display values only. These are NOT sensor measurements.
 const initial = {
  temperature:0, humidity:0, bmpTemperature:0,
  pressure:0, bmpAltitude:0,
@@ -219,71 +214,17 @@ let port = null;
 let reader = null;
 let keepReading = false;
 let connected = false;
-let lastPacketKey = null;
 let lastPacketTime = 0;
-let lastPacketNo = null;
 let textBuffer = "";
- let jsonDepth = 0;
-let jsonString = false;
-let jsonEscape = false;
-
-function processSerialText(chunk) {
-  for (const ch of chunk) {
-    if (jsonDepth === 0) {
-      if (ch === "{") {
-        textBuffer = "{";
-        jsonDepth = 1;
-        jsonString = false;
-        jsonEscape = false;
-      }
-      continue;
-    }
-
-    textBuffer += ch;
-
-    if (jsonString) {
-      if (jsonEscape) {
-        jsonEscape = false;
-      } else if (ch === "\\") {
-        jsonEscape = true;
-      } else if (ch === '"') {
-        jsonString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      jsonString = true;
-    } else if (ch === "{") {
-      jsonDepth++;
-    } else if (ch === "}") {
-      jsonDepth--;
-
-      if (jsonDepth === 0) {
-        try {
-          const data = JSON.parse(textBuffer);
-
-          if (data && typeof data === "object" && !data.error) {
-            updateTelemetry(data);
-          }
-        } catch (error) {
-          console.warn("JSON Parse Error:", error, textBuffer);
-        }
-
-        textBuffer = "";
-      }
-    }
-
-    if (textBuffer.length > 20000) {
-      textBuffer = "";
-      jsonDepth = 0;
-      jsonString = false;
-      jsonEscape = false;
-    }
-  }
-}
 let cube = null;
 let cubeReady = false;
+
+// Gyroscope noise threshold in degrees per second.
+// Values smaller than this are displayed as zero.
+const GYRO_DEADBAND = 1.5;
+
+// Accelerometer movement noise threshold in g.
+const ACCEL_DEADBAND = 0.025;
 
 const $ = id => document.getElementById(id);
 
@@ -305,7 +246,10 @@ function displayInitial() {
  show("bmpTemperature","0.00 °C");
  show("pressure","0.00 hPa");
  show("bmpAltitude","0.00 m");
- ["ax","ay","az","totalAcc","gx","gy","gz"].forEach(id=>show(id,id.startsWith("g") && id!=="gpsFix" ? "0.00" : "0.000"));
+
+ ["ax","ay","az","totalAcc"].forEach(id=>show(id,"0.000"));
+ ["gx","gy","gz"].forEach(id=>show(id,"0.00"));
+
  show("roll","0.00°");
  show("pitch","0.00°");
  show("latitude","0.000000");
@@ -361,7 +305,6 @@ function addPoint(chart, time, values) {
  values.forEach((v,i)=>{
   chart.data.datasets[i].data.push(v);
  });
- // Keep only the last 15 minutes of available readings.
  while(chart.data.labels.length > 900) {
   chart.data.labels.shift();
   chart.data.datasets.forEach(d=>d.data.shift());
@@ -373,11 +316,40 @@ function validNumber(value) {
  return typeof value === "number" && Number.isFinite(value);
 }
 
+// Remove small gyroscope drift/noise.
+function cleanGyro(value) {
+ return Math.abs(value) < GYRO_DEADBAND ? 0 : value;
+}
+
+// Calculate dynamic acceleration by estimating gravity from Roll/Pitch.
+// This makes a stationary, level sensor approximately zero on all axes.
+// Accuracy depends on the MPU orientation matching the firmware's axes.
+function calculateDynamicAcceleration(d) {
+ const rollRad = telemetry.roll * Math.PI / 180;
+ const pitchRad = telemetry.pitch * Math.PI / 180;
+
+ const gravityX = -Math.sin(pitchRad);
+ const gravityY = Math.sin(rollRad) * Math.cos(pitchRad);
+ const gravityZ = Math.cos(rollRad) * Math.cos(pitchRad);
+
+ let x = telemetry.ax - gravityX;
+ let y = telemetry.ay - gravityY;
+ let z = telemetry.az - gravityZ;
+
+ if (Math.abs(x) < ACCEL_DEADBAND) x = 0;
+ if (Math.abs(y) < ACCEL_DEADBAND) y = 0;
+ if (Math.abs(z) < ACCEL_DEADBAND) z = 0;
+
+ return {
+  x, y, z,
+  total: Math.sqrt(x*x + y*y + z*z)
+ };
+}
+
 function updateTelemetry(d) {
  const now=Date.now();
  const time=new Date(now).toLocaleTimeString();
 
- // Only update fields actually present and valid in the received packet.
  const numericFields=[
   "temperature","humidity","bmpTemperature","pressure","bmpAltitude",
   "ax","ay","az","totalAcc","gx","gy","gz","roll","pitch",
@@ -395,7 +367,6 @@ function updateTelemetry(d) {
 
  if(!accepted) return;
 
- // A packet is considered telemetry only if it has a recognized sensor field.
  const hasSensorField=[
   "temperature","humidity","bmpTemperature","pressure",
   "ax","ay","az","gx","gy","gz","latitude","longitude"
@@ -404,6 +375,7 @@ function updateTelemetry(d) {
  if(!hasSensorField) return;
 
  lastPacketTime=now;
+
  show("packetCount",String(telemetry.packetNo));
  show("lastPacket",String(telemetry.packetNo));
  show("lastUpdate",time);
@@ -415,8 +387,22 @@ function updateTelemetry(d) {
  show("pressure",telemetry.pressure.toFixed(2)+" hPa");
  show("bmpAltitude",telemetry.bmpAltitude.toFixed(2)+" m");
 
- ["ax","ay","az","totalAcc"].forEach(k=>show(k,telemetry[k].toFixed(3)));
- ["gx","gy","gz"].forEach(k=>show(k,telemetry[k].toFixed(2)));
+ // Dynamic acceleration with estimated gravity removed.
+ const dynamicAcc = calculateDynamicAcceleration(d);
+
+ show("ax",dynamicAcc.x.toFixed(3));
+ show("ay",dynamicAcc.y.toFixed(3));
+ show("az",dynamicAcc.z.toFixed(3));
+ show("totalAcc",dynamicAcc.total.toFixed(3));
+
+ // Gyroscope values with deadband applied.
+ const gx = cleanGyro(telemetry.gx);
+ const gy = cleanGyro(telemetry.gy);
+ const gz = cleanGyro(telemetry.gz);
+
+ show("gx",gx.toFixed(2));
+ show("gy",gy.toFixed(2));
+ show("gz",gz.toFixed(2));
 
  show("roll",telemetry.roll.toFixed(2)+"°");
  show("pitch",telemetry.pitch.toFixed(2)+"°");
@@ -432,12 +418,13 @@ function updateTelemetry(d) {
  show("mpuStatus",telemetry.mpuReady===1?"ONLINE":"OFFLINE");
  show("mpuDetails","Address: 0x"+telemetry.mpuAddress.toString(16)+" | WHO_AM_I: 0x"+telemetry.mpuWhoAmI.toString(16));
 
- // Add graph points only for received packets.
  addPoint(tempChart,time,[telemetry.temperature]);
  addPoint(humidityChart,time,[telemetry.humidity]);
  addPoint(pressureChart,time,[telemetry.pressure]);
- addPoint(accChart,time,[telemetry.ax,telemetry.ay,telemetry.az]);
- addPoint(gyroChart,time,[telemetry.gx,telemetry.gy,telemetry.gz]);
+
+ // Graphs use the same corrected values as the display.
+ addPoint(accChart,time,[dynamicAcc.x,dynamicAcc.y,dynamicAcc.z]);
+ addPoint(gyroChart,time,[gx,gy,gz]);
 
  updateCubeOrientation();
  $("telemetryStatus").textContent="LIVE";
@@ -458,7 +445,7 @@ async function connectESP32() {
   textBuffer="";
 
   const decoder=new TextDecoderStream();
-  const closed=port.readable.pipeTo(decoder.writable).catch(()=>{});
+  port.readable.pipeTo(decoder.writable).catch(()=>{});
   reader=decoder.readable.getReader();
 
   readSerial();
@@ -471,24 +458,37 @@ async function connectESP32() {
 }
 
 async function readSerial() {
-  try {
-    while (keepReading && reader) {
-      const { value, done } = await reader.read();
+ try {
+  while(keepReading && reader) {
+   const {value,done}=await reader.read();
+   if(done) break;
+   if(!value) continue;
 
-      if (done) break;
-      if (!value) continue;
+   textBuffer+=value;
+   let lines=textBuffer.split(/\r?\n/);
+   textBuffer=lines.pop() || "";
 
-      processSerialText(value);
+   if(textBuffer.length>10000) textBuffer="";
+
+   for(const line of lines) {
+    const trimmed=line.trim();
+    if(!trimmed) continue;
+
+    try {
+     const parsed=JSON.parse(trimmed);
+     if(parsed && typeof parsed==="object" && !Array.isArray(parsed) && !parsed.error) {
+      updateTelemetry(parsed);
+     }
+    } catch(e) {
+     console.warn("Ignored invalid JSON line:",trimmed);
     }
-  } catch (err) {
-    if (keepReading) {
-      console.error("Serial Read Error:", err);
-    }
-  } finally {
-    if (keepReading) {
-      await disconnectESP32();
-    }
+   }
   }
+ } catch(err) {
+  if(keepReading) console.warn("Serial read stopped:",err.message);
+ } finally {
+  if(keepReading) await disconnectESP32();
+ }
 }
 
 async function disconnectESP32() {
@@ -513,9 +513,10 @@ async function disconnectESP32() {
  setStatus(false,false);
 }
 
-// 3D CubeSat: default position remains stationary.
+// Improved 3D CubeSat model.
 function initCube() {
  const container=$("cube");
+
  if(!window.THREE) {
   container.textContent="3D library could not load.";
   return;
@@ -527,44 +528,166 @@ function initCube() {
  const camera=new THREE.PerspectiveCamera(
   45,container.clientWidth/300,0.1,100
  );
- camera.position.set(3,2.5,4);
+ camera.position.set(3.5,2.8,4.5);
+ camera.lookAt(0,0,0);
 
- const renderer=new THREE.WebGLRenderer({antialias:true});
+ const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+ renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
  renderer.setSize(container.clientWidth,300);
+ container.innerHTML="";
  container.appendChild(renderer.domElement);
 
- scene.add(new THREE.AmbientLight(0xffffff,1.3));
+ scene.add(new THREE.AmbientLight(0xffffff,1.5));
 
- const light=new THREE.DirectionalLight(0xffffff,2);
- light.position.set(3,5,4);
+ const light=new THREE.DirectionalLight(0xffffff,2.5);
+ light.position.set(4,5,5);
  scene.add(light);
 
- const body=new THREE.Mesh(
-  new THREE.BoxGeometry(1.25,1.25,1.25),
-  new THREE.MeshStandardMaterial({color:0xb5a078,metalness:.55,roughness:.4})
- );
- scene.add(body);
+ const fillLight=new THREE.DirectionalLight(0x4b9dff,1.1);
+ fillLight.position.set(-4,-2,-3);
+ scene.add(fillLight);
 
- const panelMat=new THREE.MeshStandardMaterial({
-  color:0x1558a8,metalness:.4,roughness:.4
+ const satellite=new THREE.Group();
+
+ // Main CubeSat body.
+ const bodyMaterial=new THREE.MeshStandardMaterial({
+  color:0xb8a078,
+  metalness:0.7,
+  roughness:0.32
  });
 
- const left=new THREE.Mesh(new THREE.BoxGeometry(.85,.025,1.2),panelMat);
- left.position.x=-1.03;
- scene.add(left);
-
- const right=new THREE.Mesh(new THREE.BoxGeometry(.85,.025,1.2),panelMat);
- right.position.x=1.03;
- scene.add(right);
-
- const antenna=new THREE.Mesh(
-  new THREE.CylinderGeometry(.025,.025,.9,12),
-  new THREE.MeshStandardMaterial({color:0xd8b45d})
+ const body=new THREE.Mesh(
+  new THREE.BoxGeometry(1.2,1.2,1.2),
+  bodyMaterial
  );
- antenna.position.set(0,.95,0);
- scene.add(antenna);
+ satellite.add(body);
 
- cube={scene,camera,renderer,body};
+ // Front dark equipment panel.
+ const frontPanel=new THREE.Mesh(
+  new THREE.BoxGeometry(0.72,0.72,0.025),
+  new THREE.MeshStandardMaterial({
+   color:0x263d52,
+   metalness:0.5,
+   roughness:0.35
+  })
+ );
+ frontPanel.position.z=0.615;
+ satellite.add(frontPanel);
+
+ // Small gold equipment details.
+ const goldMaterial=new THREE.MeshStandardMaterial({
+  color:0xffd16b,
+  metalness:0.75,
+  roughness:0.25
+ });
+
+ const sensor=new THREE.Mesh(
+  new THREE.CylinderGeometry(0.11,0.11,0.06,24),
+  goldMaterial
+ );
+ sensor.rotation.x=Math.PI/2;
+ sensor.position.set(0,0,0.65);
+ satellite.add(sensor);
+
+ // Solar panels on both sides.
+ const solarMaterial=new THREE.MeshStandardMaterial({
+  color:0x103f91,
+  metalness:0.5,
+  roughness:0.28
+ });
+
+ const gridMaterial=new THREE.MeshStandardMaterial({
+  color:0x8bbce8,
+  metalness:0.65,
+  roughness:0.3
+ });
+
+ [-1,1].forEach(side=>{
+  const wing=new THREE.Group();
+
+  const panel=new THREE.Mesh(
+   new THREE.BoxGeometry(0.95,0.035,1.18),
+   solarMaterial
+  );
+  wing.add(panel);
+
+  // Solar cell grid.
+  for(let i=-3;i<=3;i++){
+   const line=new THREE.Mesh(
+    new THREE.BoxGeometry(0.012,0.012,1.12),
+    gridMaterial
+   );
+   line.position.x=i*0.135;
+   wing.add(line);
+  }
+
+  for(let i=-2;i<=2;i++){
+   const line=new THREE.Mesh(
+    new THREE.BoxGeometry(0.91,0.012,0.012),
+    gridMaterial
+   );
+   line.position.z=i*0.19;
+   wing.add(line);
+  }
+
+  const frame=new THREE.Mesh(
+   new THREE.BoxGeometry(0.99,0.06,1.22),
+   new THREE.MeshStandardMaterial({
+    color:0x9caec0,
+    metalness:0.75,
+    roughness:0.3,
+    wireframe:true
+   })
+  );
+  wing.add(frame);
+
+  wing.position.x=side*1.08;
+  satellite.add(wing);
+
+  // Panel connecting arm.
+  const arm=new THREE.Mesh(
+   new THREE.BoxGeometry(0.35,0.06,0.06),
+   goldMaterial
+  );
+  arm.position.x=side*0.77;
+  satellite.add(arm);
+ });
+
+ // Top antenna.
+ const antenna=new THREE.Mesh(
+  new THREE.CylinderGeometry(0.025,0.035,0.85,16),
+  goldMaterial
+ );
+ antenna.position.set(0,1,0);
+ satellite.add(antenna);
+
+ // Antenna tip.
+ const antennaTip=new THREE.Mesh(
+  new THREE.SphereGeometry(0.065,16,16),
+  goldMaterial
+ );
+ antennaTip.position.set(0,1.44,0);
+ satellite.add(antennaTip);
+
+ // Small side connectors.
+ [-1,1].forEach(side=>{
+  const connector=new THREE.Mesh(
+   new THREE.BoxGeometry(0.08,0.18,0.18),
+   goldMaterial
+  );
+  connector.position.set(side*0.63,0.35,0);
+  satellite.add(connector);
+ });
+
+ scene.add(satellite);
+
+ cube={
+  scene,
+  camera,
+  renderer,
+  body:satellite
+ };
+
  cubeReady=true;
 
  function render() {
@@ -586,7 +709,7 @@ function initCube() {
 function updateCubeOrientation() {
  if(!cubeReady || telemetry.mpuReady!==1) return;
 
- // MPU firmware supplies Roll and Pitch in degrees.
+ // Follow actual MPU Roll and Pitch.
  cube.body.rotation.z=telemetry.roll*Math.PI/180;
  cube.body.rotation.x=telemetry.pitch*Math.PI/180;
 }
@@ -597,9 +720,8 @@ setStatus(false,false);
 if(window.THREE) initCube();
 else $("cube").textContent="Loading 3D model...";
 
-// No telemetry timers or random data generators are used.
-// The dashboard changes only when actual serial JSON packets arrive.
-</script>
-
-</body>
-</html>
+// No simulated or random telemetry is generated.
+// All readingscome from actual ESP32 serial JSON packets.
+</scipt>
+ </body>
+ </html>
