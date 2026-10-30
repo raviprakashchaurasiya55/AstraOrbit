@@ -1,0 +1,2304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASTRA ORBIT 2.0 — CubeSat Mission Control</title>
+
+  <!-- Typography: Orbitron for aerospace display, JetBrains Mono & Inter for telemetry -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@600;800;900&display=swap" rel="stylesheet">
+
+  <!-- Core Libraries via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root {
+      --bg-space: #030712;
+      --bg-panel: rgba(11, 18, 38, 0.85);
+      --bg-panel-hover: rgba(16, 27, 56, 0.95);
+      --border-hud: rgba(0, 229, 255, 0.22);
+      --border-hud-bright: rgba(0, 229, 255, 0.65);
+      --cyan-neon: #00e5ff;
+      --blue-glow: #0077ff;
+      --status-ok: #00ffaa;
+      --status-warn: #ffaa00;
+      --status-crit: #ff3366;
+      --text-main: #f0f6fc;
+      --text-muted: #8b9bb4;
+      --font-display: 'Orbitron', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-ui: 'Inter', sans-serif;
+      --shadow-hud: 0 0 20px rgba(0, 229, 255, 0.08);
+      --glow-cyan: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-space);
+      color: var(--text-main);
+      font-family: var(--font-ui);
+      overflow-x: hidden;
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(0, 119, 255, 0.08) 0%, transparent 60%),
+        radial-gradient(circle at 90% 80%, rgba(0, 229, 255, 0.04) 0%, transparent 40%),
+        linear-gradient(rgba(3, 7, 18, 0.92), rgba(3, 7, 18, 0.92)),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 229, 255, 0.012) 2px, rgba(0, 229, 255, 0.012) 4px);
+    }
+
+    /* Scanline FX Overlay */
+    .scanlines {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 999;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+      background-size: 100% 3px, 6px 100%;
+      opacity: 0.6;
+    }
+
+    /* TOP FLIGHT HUD NAVIGATION */
+    header.hud-header {
+      background: rgba(8, 14, 30, 0.9);
+      border-bottom: 1px solid var(--border-hud);
+      backdrop-filter: blur(14px);
+      padding: 10px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo svg {
+      width: 32px;
+      height: 32px;
+      filter: drop-shadow(var(--glow-cyan));
+    }
+
+    .brand-title h1 {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      letter-spacing: 2px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-title h1 span {
+      color: var(--cyan-neon);
+      text-shadow: var(--glow-cyan);
+    }
+
+    .mission-meta-badge {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    .hud-statuses {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      letter-spacing: 0.5px;
+    }
+
+    .beacon-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--status-ok);
+      box-shadow: 0 0 8px var(--status-ok);
+      animation: pulse-beacon 1.8s infinite;
+    }
+
+    .beacon-dot.warn { background: var(--status-warn); box-shadow: 0 0 8px var(--status-warn); }
+    .beacon-dot.crit { background: var(--status-crit); box-shadow: 0 0 8px var(--status-crit); }
+
+    @keyframes pulse-beacon {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .hud-controls-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .hud-btn {
+      background: rgba(0, 229, 255, 0.08);
+      border: 1px solid var(--border-hud);
+      color: var(--cyan-neon);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .hud-btn:hover {
+      background: rgba(0, 229, 255, 0.2);
+      border-color: var(--cyan-neon);
+      box-shadow: var(--glow-cyan);
+      transform: translateY(-1px);
+    }
+
+    .hud-btn.active {
+      background: var(--cyan-neon);
+      color: var(--bg-space);
+      font-weight: 700;
+    }
+
+    .hud-btn.danger {
+      border-color: rgba(255, 51, 102, 0.4);
+      color: #ff3366;
+      background: rgba(255, 51, 102, 0.08);
+    }
+    .hud-btn.danger:hover {
+      background: rgba(255, 51, 102, 0.25);
+      border-color: #ff3366;
+    }
+
+    .time-hud {
+      text-align: right;
+      font-family: var(--font-mono);
+      min-width: 170px;
+    }
+
+    .utc-time {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .met-timer {
+      font-size: 0.65rem;
+      color: var(--cyan-neon);
+      letter-spacing: 0.5px;
+    }
+
+    /* MAIN APP WORKSPACE */
+    main.mission-grid {
+      display: grid;
+      grid-template-columns: 340px 1fr 340px;
+      gap: 16px;
+      padding: 16px;
+      height: calc(100vh - 66px);
+      box-sizing: border-box;
+    }
+
+    /* TELEMETRY CARDS SYSTEM */
+    .telemetry-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .telemetry-column::-webkit-scrollbar {
+      width: 4px;
+    }
+    .telemetry-column::-webkit-scrollbar-thumb {
+      background: rgba(0, 229, 255, 0.2);
+      border-radius: 4px;
+    }
+
+    .telem-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-hud);
+      border-radius: 6px;
+      padding: 12px 14px;
+      position: relative;
+      cursor: pointer;
+      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+      backdrop-filter: blur(8px);
+      box-shadow: var(--shadow-hud);
+      overflow: hidden;
+    }
+
+    .telem-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0;
+      width: 3px; height: 100%;
+      background: var(--cyan-neon);
+      opacity: 0.7;
+      transition: width 0.2s ease;
+    }
+
+    .telem-card:hover {
+      background: var(--bg-panel-hover);
+      border-color: var(--border-hud-bright);
+      transform: translateX(3px);
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.18);
+    }
+
+    .telem-card:hover::before {
+      width: 5px;
+    }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 0.68rem;
+      letter-spacing: 1.2px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .card-badge {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: rgba(0, 255, 170, 0.12);
+      color: var(--status-ok);
+      border: 1px solid rgba(0, 255, 170, 0.3);
+    }
+
+    .card-badge.warn {
+      background: rgba(255, 170, 0, 0.12);
+      color: var(--status-warn);
+      border-color: rgba(255, 170, 0, 0.3);
+    }
+
+    .card-main-val {
+      font-family: var(--font-mono);
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      line-height: 1.1;
+    }
+
+    .val-unit {
+      font-size: 0.85rem;
+      color: var(--cyan-neon);
+      font-weight: 400;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px dashed rgba(255, 255, 255, 0.08);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+
+    .trend-pill {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .trend-up { color: var(--status-ok); }
+    .trend-down { color: var(--cyan-neon); }
+    .trend-warn { color: var(--status-warn); }
+
+    /* MULTI-AXIS GRIDS (ACCEL & GYRO) */
+    .axis-bars-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .axis-box {
+      background: rgba(0, 0, 0, 0.3);
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      text-align: center;
+    }
+
+    .axis-label {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      color: var(--text-muted);
+    }
+
+    .axis-val {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    .axis-bar-wrap {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+
+    .axis-fill {
+      height: 100%;
+      background: var(--cyan-neon);
+      transition: width 0.2s ease;
+    }
+
+    /* CENTER STAGE VIEWPORT (3D + ORBITAL TELEMETRY) */
+    .center-stage {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .hud-window {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-hud);
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-hud);
+    }
+
+    .window-header {
+      padding: 8px 14px;
+      background: rgba(0, 15, 35, 0.7);
+      border-bottom: 1px solid var(--border-hud);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .window-header-title {
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      letter-spacing: 1.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .window-header-title svg {
+      width: 14px;
+      height: 14px;
+      color: var(--cyan-neon);
+    }
+
+    .viewport-3d-box {
+      flex: 1.4;
+      min-height: 380px;
+      position: relative;
+      background: radial-gradient(circle at 50% 50%, #08152e 0%, #030712 90%);
+    }
+
+    #webgl-cubesat {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: grab;
+    }
+    #webgl-cubesat:active {
+      cursor: grabbing;
+    }
+
+    /* HUD Reticle Overlay over 3D */
+    .viewport-hud-overlay {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      pointer-events: none;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--cyan-neon);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(3, 7, 18, 0.6);
+      padding: 8px 12px;
+      border-radius: 4px;
+      border-left: 2px solid var(--cyan-neon);
+    }
+
+    .attitude-floating-box {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background: rgba(3, 7, 18, 0.75);
+      border: 1px solid var(--border-hud);
+      border-radius: 4px;
+      padding: 8px 14px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      display: flex;
+      gap: 16px;
+      backdrop-filter: blur(6px);
+      z-index: 10;
+    }
+
+    .attitude-tag {
+      color: var(--text-muted);
+    }
+    .attitude-num {
+      color: #fff;
+      font-weight: 700;
+      margin-left: 4px;
+    }
+
+    .viewport-tools {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+
+    .tool-icon-btn {
+      background: rgba(3, 7, 18, 0.8);
+      border: 1px solid var(--border-hud);
+      color: var(--cyan-neon);
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s ease;
+    }
+    .tool-icon-btn:hover {
+      background: var(--cyan-neon);
+      color: var(--bg-space);
+      box-shadow: var(--glow-cyan);
+    }
+
+    /* CENTER BOTTOM SPLIT: ORBIT TRACK & REAL-TIME STRIP */
+    .center-lower-split {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-height: 220px;
+    }
+
+    /* 2D Ground Track Canvas */
+    .groundtrack-box {
+      position: relative;
+      background: #02050e;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #groundtrack-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Live Telemetry Chart Box */
+    .live-chart-box {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-container-inner {
+      flex: 1;
+      position: relative;
+      padding: 8px 12px;
+      min-height: 160px;
+    }
+
+    /* BOTTOM LOG STREAM / CONSOLE */
+    .mission-footer-log {
+      grid-column: 1 / -1;
+      background: rgba(6, 11, 24, 0.95);
+      border: 1px solid var(--border-hud);
+      border-radius: 4px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+    }
+
+    .terminal-feed {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: var(--text-muted);
+    }
+
+    .terminal-feed .term-time {
+      color: var(--cyan-neon);
+    }
+
+    .terminal-feed .term-text {
+      color: #fff;
+    }
+
+    /* SENSOR DEEP-DIVE MODAL SYSTEM */
+    .sensor-modal-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: rgba(1, 4, 10, 0.85);
+      backdrop-filter: blur(16px);
+      z-index: 2000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      animation: modalFade 0.2s ease-out;
+    }
+
+    .sensor-modal-overlay.active {
+      display: flex;
+    }
+
+    @keyframes modalFade {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .sensor-modal-window {
+      background: #091124;
+      border: 1px solid var(--border-hud-bright);
+      border-radius: 8px;
+      width: 100%;
+      max-width: 940px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
+      overflow: hidden;
+    }
+
+    .modal-hdr {
+      background: rgba(3, 7, 18, 0.9);
+      border-bottom: 1px solid var(--border-hud);
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .modal-title-group h2 {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      letter-spacing: 1.5px;
+      color: #fff;
+    }
+
+    .modal-close-btn {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-muted);
+      width: 32px;
+      height: 32px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .modal-close-btn:hover {
+      border-color: var(--status-crit);
+      color: var(--status-crit);
+      background: rgba(255, 51, 102, 0.1);
+    }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .stats-matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .stat-chip {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+    }
+
+    .stat-chip-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .stat-chip-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 4px;
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .stat-chip-value small {
+      font-size: 0.7rem;
+      color: var(--cyan-neon);
+      font-weight: 400;
+    }
+
+    .modal-chart-stage {
+      background: rgba(3, 7, 18, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 6px;
+      padding: 14px;
+      height: 300px;
+      position: relative;
+    }
+
+    .sensor-history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+    }
+
+    .sensor-history-table th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--cyan-neon);
+      border-bottom: 1px solid var(--border-hud);
+      background: rgba(0, 229, 255, 0.03);
+    }
+
+    .sensor-history-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      color: var(--text-muted);
+    }
+
+    .sensor-history-table tr:hover td {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .table-container {
+      max-height: 180px;
+      overflow-y: auto;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 4px;
+    }
+
+    /* TOAST ALERT NOTIFICATION */
+    .toast-hud {
+      position: fixed;
+      bottom: 40px;
+      right: 24px;
+      background: rgba(9, 17, 36, 0.95);
+      border: 1px solid var(--cyan-neon);
+      border-left: 4px solid var(--cyan-neon);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8), var(--glow-cyan);
+      padding: 12px 20px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      z-index: 3000;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transform: translateY(120%);
+      transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    }
+
+    .toast-hud.show {
+      transform: translateY(0);
+    }
+
+    .toast-hud.crit {
+      border-color: var(--status-crit);
+      border-left-color: var(--status-crit);
+      box-shadow: 0 4px 20px rgba(255, 51, 102, 0.3);
+    }
+
+    /* Subsystem indicator LEDs */
+    .subsystem-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .subsystem-pill {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 6px 10px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+    }
+
+    .subsystem-name {
+      color: var(--text-muted);
+    }
+
+    .subsystem-led {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--status-ok);
+      box-shadow: 0 0 6px var(--status-ok);
+    }
+
+    /* RESPONSIVE DESIGN ADJUSTMENTS */
+    @media (max-width: 1400px) {
+      main.mission-grid {
+        grid-template-columns: 290px 1fr 290px;
+      }
+    }
+
+    @media (max-width: 1100px) {
+      body {
+        overflow-y: auto;
+      }
+      main.mission-grid {
+        display: flex;
+        flex-direction: column;
+        height: auto;
+      }
+      .center-stage {
+        min-height: 600px;
+      }
+      .viewport-3d-box {
+        min-height: 400px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient CRT Scanline Effect -->
+  <div class="scanlines"></div>
+
+  <!-- HUD NAVIGATION HEADER -->
+  <header class="hud-header">
+    <div class="brand-section">
+      <div class="brand-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 19 21 12 17 5 21 12 2" fill="rgba(0, 229, 255, 0.15)" stroke="#00e5ff"/>
+          <circle cx="12" cy="11" r="2" fill="#00e5ff"/>
+        </svg>
+        <div class="brand-title">
+          <h1>ASTRA ORBIT <span>2.0</span></h1>
+          <div class="mission-meta-badge">1U CubeSat Flight Ground Station // SSC-59281</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Flight Status Indicators -->
+    <div class="hud-statuses">
+      <div class="status-pill" title="Mission Orbit Phase">
+        <div class="beacon-dot" id="status-orbit-beacon"></div>
+        <span>ORBIT: <strong id="status-phase-text" style="color:#fff;">LEO / NOMINAL</strong></span>
+      </div>
+
+      <div class="status-pill" title="ESP32 LoRa / WiFi Uplink">
+        <div class="beacon-dot" id="status-esp-beacon"></div>
+        <span>ESP32 LINK: <strong id="status-esp-text" style="color:var(--status-ok);">CONNECTED (437.45 MHz)</strong></span>
+      </div>
+
+      <div class="status-pill" title="Telemetry Feed Integrity">
+        <div class="beacon-dot" id="status-telem-beacon"></div>
+        <span>TELEMETRY: <strong id="status-telem-rate" style="color:#fff;">9.6 kbps [100%]</strong></span>
+      </div>
+    </div>
+
+    <!-- Mission Control Quick Action Tools -->
+    <div class="hud-controls-group">
+      <button class="hud-btn" id="btn-audio-toggle" title="Toggle Ground Station Telemetry Audio">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+        <span id="audio-btn-label">AUDIO: ON</span>
+      </button>
+
+      <button class="hud-btn" id="btn-detumble" title="Execute Active Magnetorquer B-Dot Detumble">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        DETUMBLE ADCS
+      </button>
+
+      <button class="hud-btn danger" id="btn-sim-anomaly" title="Inject simulated thermal/attitude anomaly">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        SIM ANOMALY
+      </button>
+
+      <div class="time-hud">
+        <div class="utc-time" id="clock-utc">00:00:00 UTC</div>
+        <div class="met-timer">MET: <span id="clock-met">T+042:14:09:22</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN HUD WORKSPACE -->
+  <main class="mission-grid">
+
+    <!-- LEFT COLUMN: PRIMARY ENVIRONMENTAL & SYSTEM TELEMETRY -->
+    <aside class="telemetry-column">
+
+      <!-- 1. TEMPERATURE CARD -->
+      <article class="telem-card" onclick="openSensorModal('temp')" title="Click for deep-dive temperature telemetry">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+            Internal Temp
+          </div>
+          <span class="card-badge" id="badge-temp">NOMINAL</span>
+        </div>
+        <div class="card-main-val">
+          <span id="val-temp">24.2</span>
+          <span class="val-unit">°C</span>
+        </div>
+        <div class="card-footer">
+          <span class="trend-pill trend-up" id="trend-temp">▲ +0.3°C / min</span>
+          <span>PREV: <span id="prev-temp">23.9</span>°C</span>
+        </div>
+      </article>
+
+      <!-- 2. HUMIDITY CARD -->
+      <article class="telem-card" onclick="openSensorModal('humidity')" title="Click for payload bay humidity analytics">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>
+            Chamber Humidity
+          </div>
+          <span class="card-badge" id="badge-humidity">NOMINAL</span>
+        </div>
+        <div class="card-main-val">
+          <span id="val-humidity">28.4</span>
+          <span class="val-unit">% RH</span>
+        </div>
+        <div class="card-footer">
+          <span class="trend-pill trend-down" id="trend-humidity">▼ -0.1% / min</span>
+          <span>PREV: <span id="prev-humidity">28.5</span>%</span>
+        </div>
+      </article>
+
+      <!-- 3. PRESSURE CARD -->
+      <article class="telem-card" onclick="openSensorModal('pressure')" title="Click for atmospheric and barometric pressure details">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 12l-4-4-4 4M12 16V8"/></svg>
+            Payload Pressure
+          </div>
+          <span class="card-badge" id="badge-pressure">PRESSURIZED</span>
+        </div>
+        <div class="card-main-val">
+          <span id="val-pressure">1013.18</span>
+          <span class="val-unit">hPa</span>
+        </div>
+        <div class="card-footer">
+          <span class="trend-pill trend-down" id="trend-pressure">▼ -0.04 hPa</span>
+          <span>EQUIV: 1.00 atm</span>
+        </div>
+      </article>
+
+      <!-- 8. SYSTEM INFORMATION & EPS HEALTH -->
+      <article class="telem-card" onclick="openSensorModal('system')" title="Click for ESP32 micro-controller and EPS bus telemetry">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+            OBC / EPS Subsystems
+          </div>
+          <span class="card-badge">HEALTHY</span>
+        </div>
+        <div class="card-main-val" style="font-size: 1.25rem;">
+          <span id="val-vbatt">8.24</span> <span class="val-unit">V</span>
+          <span style="font-size: 0.85rem; color: var(--text-muted); margin-left: 10px;">|</span>
+          <span id="val-rssi" style="margin-left: 10px; font-size: 1.15rem;">-76</span> <span class="val-unit">dBm</span>
+        </div>
+        <div class="subsystem-grid">
+          <div class="subsystem-pill">
+            <span class="subsystem-name">ESP32 Core 0</span>
+            <span class="subsystem-led"></span>
+          </div>
+          <div class="subsystem-pill">
+            <span class="subsystem-name">LoRa SX1276</span>
+            <span class="subsystem-led"></span>
+          </div>
+          <div class="subsystem-pill">
+            <span class="subsystem-name">EPS MPPT Bus</span>
+            <span class="subsystem-led"></span>
+          </div>
+          <div class="subsystem-pill">
+            <span class="subsystem-name">FRAM Logger</span>
+            <span class="subsystem-led"></span>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span>PACKETS: <strong id="val-pkt-count" style="color:#fff;">14,892</strong></span>
+          <span>UPTIME: <strong id="val-uptime" style="color:var(--cyan-neon);">184:32:10</strong></span>
+        </div>
+      </article>
+
+    </aside>
+
+    <!-- CENTER STAGE: 3D CUBESAT VISUALIZATION & ORBITAL ANALYSIS -->
+    <section class="center-stage">
+      
+      <!-- TOP: 3D THREE.JS CUBESAT ATTITUDE HUD -->
+      <div class="hud-window viewport-3d-box">
+        <div class="window-header">
+          <div class="window-header-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            REAL-TIME 3D ATTITUDE DETERMINATION & CUBESAT TWIN
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--cyan-neon);">
+            FRAME: NADIR POINTING [J2000]
+          </div>
+        </div>
+
+        <!-- 3D Canvas -->
+        <canvas id="webgl-cubesat"></canvas>
+
+        <!-- Top Left Reticle Info -->
+        <div class="viewport-hud-overlay">
+          <div>MODEL: ASTRA-1U-CUBESAT-FLIGHT</div>
+          <div>ADCS MODE: NADIR_POINTING_STABLE</div>
+          <div>B-DOT DAMPING: ACTIVE</div>
+          <div>SOLAR BUS CURRENT: 642 mA</div>
+        </div>
+
+        <!-- Interactive 3D Camera Controls -->
+        <div class="viewport-tools">
+          <button class="tool-icon-btn" id="btn-toggle-wireframe" title="Toggle CubeSat Wireframe mode">WIREFRAME</button>
+          <button class="tool-icon-btn" id="btn-reset-cam" title="Reset Camera to default viewpoint">RESET CAM</button>
+        </div>
+
+        <!-- Live Attitude Numbers -->
+        <div class="attitude-floating-box">
+          <div><span class="attitude-tag">ROLL:</span><span class="attitude-num" id="hud-roll">+0.42°</span></div>
+          <div><span class="attitude-tag">PITCH:</span><span class="attitude-num" id="hud-pitch">-1.15°</span></div>
+          <div><span class="attitude-tag">YAW:</span><span class="attitude-num" id="hud-yaw">+48.30°</span></div>
+        </div>
+      </div>
+
+      <!-- CENTER LOWER SPLIT: 2D GROUND TRACK & TELEMETRY LIVE TREND -->
+      <div class="center-lower-split">
+        
+        <!-- 2D Orbital Ground Track Map -->
+        <div class="hud-window groundtrack-box" onclick="openSensorModal('gps')" title="Click for high-accuracy GPS navigation coordinates">
+          <div class="window-header">
+            <div class="window-header-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              ORBITAL GROUND TRACK (LEO PROPAGATOR)
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--status-ok);">
+              SATS: <span id="map-sats-count">11</span> (RTK FIX)
+            </div>
+          </div>
+          <canvas id="groundtrack-canvas"></canvas>
+        </div>
+
+        <!-- Primary Sensor Real-Time Multi-Trace Graph -->
+        <div class="hud-window live-chart-box">
+          <div class="window-header">
+            <div class="window-header-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              LIVE TELEMETRY STREAM OSCILLOSCOPE
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--cyan-neon);">
+              STREAM RATE: 1.0 Hz
+            </div>
+          </div>
+          <div class="chart-container-inner">
+            <canvas id="canvas-overview-chart"></canvas>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- RIGHT COLUMN: MOTION, ADCS, ORIENTATION & GPS NAVIGATION -->
+    <aside class="telemetry-column">
+
+      <!-- 4. ACCELEROMETER CARD -->
+      <article class="telem-card" onclick="openSensorModal('accel')" title="Click for 3-axis Accelerometer G-vector metrics">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            Accelerometer (MPU-6050)
+          </div>
+          <span class="card-badge" id="badge-accel">±2G MODE</span>
+        </div>
+        <div class="card-main-val">
+          <span id="val-accel-mag">0.998</span>
+          <span class="val-unit">|G| Total</span>
+        </div>
+        <div class="axis-bars-grid">
+          <div class="axis-box">
+            <div class="axis-label">X AXIS</div>
+            <div class="axis-val" id="val-acc-x">+0.02</div>
+            <div class="axis-bar-wrap"><div class="axis-fill" id="bar-acc-x" style="width: 51%;"></div></div>
+          </div>
+          <div class="axis-box">
+            <div class="axis-label">Y AXIS</div>
+            <div class="axis-val" id="val-acc-y">-0.01</div>
+            <div class="axis-bar-wrap"><div class="axis-fill" id="bar-acc-y" style="width: 48%;"></div></div>
+          </div>
+          <div class="axis-box">
+            <div class="axis-label">Z AXIS</div>
+            <div class="axis-val" id="val-acc-z">+0.99</div>
+            <div class="axis-bar-wrap"><div class="axis-fill" id="bar-acc-z" style="width: 99%;"></div></div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span>ZERO-G OFFSET: ±0.003g</span>
+          <span>CALIBRATED</span>
+        </div>
+      </article>
+
+      <!-- 5. GYROSCOPE CARD -->
+      <article class="telem-card" onclick="openSensorModal('gyro')" title="Click for Angular Rate and Rotation analytics">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Gyroscope (Angular Rate)
+          </div>
+          <span class="card-badge" id="badge-gyro">DAMPED</span>
+        </div>
+        <div class="card-main-val">
+          <span id="val-gyro-mag">0.82</span>
+          <span class="val-unit">°/sec</span>
+        </div>
+        <div class="axis-bars-grid">
+          <div class="axis-box">
+            <div class="axis-label">ωX</div>
+            <div class="axis-val" id="val-gyr-x">+0.31</div>
+            <div class="axis-bar-wrap"><div class="axis-fill" id="bar-gyr-x" style="width: 53%;"></div></div>
+          </div>
+          <div class="axis-box">
+            <div class="axis-label">ωY</div>
+            <div class="axis-val" id="val-gyr-y">-0.18</div>
+            <div class="axis-bar-wrap"><div class="axis-fill" id="bar-gyr-y" style="width: 46%;"></div></div>
+          </div>
+          <div class="axis-box">
+            <div class="axis-label">ωZ</div>
+            <div class="axis-val" id="val-gyr-z">+0.74</div>
+            <div class="axis-bar-wrap"><div class="axis-fill" id="bar-gyr-z" style="width: 65%;"></div></div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span>MAX TUMBLE: 1.4°/s</span>
+          <span>B-DOT ACTIVE</span>
+        </div>
+      </article>
+
+      <!-- 6. ORIENTATION CARD -->
+      <article class="telem-card" onclick="openSensorModal('orientation')" title="Click for Euler angles & Quaternion telemetry">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            Orientation (Euler Angles)
+          </div>
+          <span class="card-badge">FUSED AHRS</span>
+        </div>
+        <div class="card-main-val">
+          <span id="card-primary-orient">R +0.4°</span>
+          <span class="val-unit">P -1.2°</span>
+        </div>
+        <div class="axis-bars-grid">
+          <div class="axis-box">
+            <div class="axis-label">ROLL (φ)</div>
+            <div class="axis-val" id="card-roll-val">+0.42°</div>
+          </div>
+          <div class="axis-box">
+            <div class="axis-label">PITCH (θ)</div>
+            <div class="axis-val" id="card-pitch-val">-1.15°</div>
+          </div>
+          <div class="axis-box">
+            <div class="axis-label">YAW (ψ)</div>
+            <div class="axis-val" id="card-yaw-val">48.3°</div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <span>KALMAN FILTER COV: 0.0014</span>
+          <span>LOCK: TRUE</span>
+        </div>
+      </article>
+
+      <!-- 7. GPS NAVIGATION CARD -->
+      <article class="telem-card" onclick="openSensorModal('gps')" title="Click for high-accuracy GPS ephemeris">
+        <div class="card-top">
+          <div class="card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            GPS / Ephemeris (NEO-M8N)
+          </div>
+          <span class="card-badge" id="badge-gps">3D FIX</span>
+        </div>
+        <div class="card-main-val" style="font-size: 1.45rem;">
+          <span id="val-gps-lat">28.5721° N</span>
+        </div>
+        <div style="font-family: var(--font-mono); font-size: 0.85rem; color: #fff; margin-top: 2px;" id="val-gps-lon">
+          80.6480° W
+        </div>
+        <div class="card-footer">
+          <span>ALT: <strong id="val-gps-alt" style="color:#fff;">414.2 km</strong></span>
+          <span>VEL: <strong id="val-gps-spd" style="color:var(--cyan-neon);">7.66 km/s</strong></span>
+        </div>
+      </article>
+
+    </aside>
+
+    <!-- BOTTOM MISSION TERMINAL FEED -->
+    <footer class="mission-footer-log">
+      <div class="terminal-feed">
+        <span class="term-time" id="term-log-time">[18:24:02.102]</span>
+        <span class="term-text" id="term-log-content">RX PKT #14892 -> ALL SENSORS NOMINAL | CRC: OK | RSSI: -76dBm | SOLAR IN: 4.89W | ADCS: LOCKED</span>
+      </div>
+      <div style="color: var(--cyan-neon); font-size: 0.65rem; letter-spacing: 1px;">
+        COMM LINK: DIRECT RF-LOS [GS-NORTH-AMERICA]
+      </div>
+    </footer>
+  </main>
+
+  <!-- REUSABLE SENSOR DEEP-DIVE MODAL DIALOG -->
+  <div class="sensor-modal-overlay" id="sensor-modal" onclick="closeSensorModal(event)">
+    <div class="sensor-modal-window" onclick="event.stopPropagation()">
+      <div class="modal-hdr">
+        <div class="modal-title-group">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--cyan-neon)" stroke-width="2" id="modal-icon"><circle cx="12" cy="12" r="10"/></svg>
+          <div>
+            <h2 id="modal-sensor-name">SENSOR TELEMETRY ANALYTICS</h2>
+            <div style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);" id="modal-sensor-subtitle">SUBSYSTEM TELEMETRY DECODER // CALIBRATION ACTIVE</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" onclick="closeSensorModal(null)">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- 4-Metric Aggregate Stats Row -->
+        <div class="stats-matrix-grid">
+          <div class="stat-chip">
+            <div class="stat-chip-label">Current Reading</div>
+            <div class="stat-chip-value"><span id="m-stat-cur">--</span> <small id="m-unit-1"></small></div>
+          </div>
+          <div class="stat-chip">
+            <div class="stat-chip-label">Recorded Minimum</div>
+            <div class="stat-chip-value"><span id="m-stat-min">--</span> <small id="m-unit-2"></small></div>
+          </div>
+          <div class="stat-chip">
+            <div class="stat-chip-label">Recorded Maximum</div>
+            <div class="stat-chip-value"><span id="m-stat-max">--</span> <small id="m-unit-3"></small></div>
+          </div>
+          <div class="stat-chip">
+            <div class="stat-chip-label">Rolling Average</div>
+            <div class="stat-chip-value"><span id="m-stat-avg">--</span> <small id="m-unit-4"></small></div>
+          </div>
+        </div>
+
+        <!-- High-Resolution Modal Chart Canvas -->
+        <div class="modal-chart-stage">
+          <canvas id="modal-canvas-chart"></canvas>
+        </div>
+
+        <!-- Telemetry Audit Table -->
+        <div>
+          <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--cyan-neon); margin-bottom: 6px; display: flex; justify-content: space-between;">
+            <span>RECENT PACKET LOGS (LAST 8 SAMPLES)</span>
+            <span style="color: var(--text-muted);">FRAME INTEGRITY: 100% VALID CRC</span>
+          </div>
+          <div class="table-container">
+            <table class="sensor-history-table">
+              <thead>
+                <tr>
+                  <th>UTC TIMESTAMP</th>
+                  <th>RAW SENSOR VALUE</th>
+                  <th>DELTA (Δt)</th>
+                  <th>STATUS FLAG</th>
+                  <th>BUS VOLTAGE</th>
+                </tr>
+              </thead>
+              <tbody id="modal-tbody">
+                <!-- Dynamically populated rows -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Action tools at modal base -->
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px;">
+          <button class="hud-btn" onclick="exportSensorCSV()">EXPORT CSV TELEMETRY</button>
+          <button class="hud-btn" onclick="triggerManualCalibrate()">CALIBRATE ZERO-OFFSET</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HUD TOAST NOTIFICATION -->
+  <div class="toast-hud" id="toast-notification">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="toast-icon"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div id="toast-msg">COMMUNICATION LINK NOMINAL</div>
+  </div>
+
+  <!-- COMPLETE MISSION CONTROL CLIENT ENGINE JAVASCRIPT -->
+  <script>
+    /* =========================================================================
+       1. GLOBAL STATE & TELEMETRY ENGINE
+       ========================================================================= */
+    const MissionEngine = {
+      audioEnabled: true,
+      audioCtx: null,
+      metSeconds: 42 * 86400 + 14 * 3600 + 9 * 60 + 22,
+      packetCounter: 14892,
+      activeModalSensor: null,
+      isWireframe: false,
+      anomalyActive: false,
+
+      // Live Telemetry Variables
+      telemetry: {
+        temp: { current: 24.2, prev: 23.9, history: [], min: 21.0, max: 27.8, unit: '°C' },
+        humidity: { current: 28.4, prev: 28.5, history: [], min: 22.0, max: 34.0, unit: '%' },
+        pressure: { current: 1013.18, prev: 1013.22, history: [], min: 1011.5, max: 1014.2, unit: 'hPa' },
+        accel: {
+          x: 0.02, y: -0.01, z: 0.99,
+          mag: 0.998,
+          history: [], min: 0.98, max: 1.04, unit: 'g'
+        },
+        gyro: {
+          x: 0.31, y: -0.18, z: 0.74,
+          mag: 0.82,
+          history: [], min: 0.12, max: 2.15, unit: '°/s'
+        },
+        orientation: {
+          roll: 0.42, pitch: -1.15, yaw: 48.30,
+          history: [], unit: '°'
+        },
+        gps: {
+          lat: 28.5721, lon: -80.6480, alt: 414.2, speed: 7.66, sats: 11,
+          history: [], unit: 'km'
+        },
+        system: {
+          vbatt: 8.24, rssi: -76, currentBus: 642,
+          history: [], min: 7.8, max: 8.4, unit: 'V'
+        }
+      }
+    };
+
+    // Prepopulate 30 seconds of historical data
+    (function seedTelemetryHistory() {
+      const now = Date.now();
+      for (let i = 29; i >= 0; i--) {
+        const t = new Date(now - i * 1000).toISOString().substr(11, 8);
+        const tempVal = +(23.8 + Math.sin(i * 0.2) * 1.5 + (Math.random() * 0.2)).toFixed(2);
+        MissionEngine.telemetry.temp.history.push({ time: t, val: tempVal, vbatt: 8.24 });
+
+        const humVal = +(28.2 + Math.cos(i * 0.2) * 1.1 + (Math.random() * 0.1)).toFixed(1);
+        MissionEngine.telemetry.humidity.history.push({ time: t, val: humVal, vbatt: 8.24 });
+
+        const pressVal = +(1013.25 - (i * 0.01) + (Math.random() * 0.05)).toFixed(2);
+        MissionEngine.telemetry.pressure.history.push({ time: t, val: pressVal, vbatt: 8.24 });
+
+        const ax = +(0.02 + (Math.random() * 0.02 - 0.01)).toFixed(3);
+        const ay = +(-0.01 + (Math.random() * 0.02 - 0.01)).toFixed(3);
+        const az = +(0.99 + (Math.random() * 0.02 - 0.01)).toFixed(3);
+        const aMag = +(Math.sqrt(ax*ax + ay*ay + az*az)).toFixed(3);
+        MissionEngine.telemetry.accel.history.push({ time: t, val: aMag, x: ax, y: ay, z: az, vbatt: 8.24 });
+
+        const gx = +(0.3 + (Math.random() * 0.1 - 0.05)).toFixed(2);
+        const gy = +(-0.15 + (Math.random() * 0.1 - 0.05)).toFixed(2);
+        const gz = +(0.7 + (Math.random() * 0.1 - 0.05)).toFixed(2);
+        const gMag = +(Math.sqrt(gx*gx + gy*gy + gz*gz)).toFixed(2);
+        MissionEngine.telemetry.gyro.history.push({ time: t, val: gMag, x: gx, y: gy, z: gz, vbatt: 8.24 });
+
+        MissionEngine.telemetry.orientation.history.push({
+          time: t,
+          roll: +(0.4 + Math.sin(i * 0.1) * 0.3).toFixed(2),
+          pitch: +(-1.1 + Math.cos(i * 0.1) * 0.3).toFixed(2),
+          yaw: +((45 + i * 0.2) % 360).toFixed(2)
+        });
+
+        MissionEngine.telemetry.gps.history.push({
+          time: t,
+          lat: +(28.5 + (30 - i) * 0.02).toFixed(4),
+          lon: +(-80.6 + (30 - i) * 0.04).toFixed(4),
+          alt: +(414.0 + Math.sin(i * 0.1) * 0.5).toFixed(1),
+          speed: 7.66
+        });
+
+        MissionEngine.telemetry.system.history.push({
+          time: t,
+          val: +(8.24 - (i * 0.001)).toFixed(2),
+          rssi: -76 + Math.floor(Math.random() * 3)
+        });
+      }
+    })();
+
+    /* =========================================================================
+       2. WEB AUDIO API TELEMETRY CHIRP
+       ========================================================================= */
+    function playTelemetryBeep(freq = 1200, duration = 0.04) {
+      if (!MissionEngine.audioEnabled) return;
+      try {
+        if (!MissionEngine.audioCtx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          MissionEngine.audioCtx = new AudioContext();
+        }
+        if (MissionEngine.audioCtx.state === 'suspended') {
+          MissionEngine.audioCtx.resume();
+        }
+        const osc = MissionEngine.audioCtx.createOscillator();
+        const gain = MissionEngine.audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, MissionEngine.audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.015, MissionEngine.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, MissionEngine.audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(MissionEngine.audioCtx.destination);
+        osc.start();
+        osc.stop(MissionEngine.audioCtx.currentTime + duration);
+      } catch (e) {
+        // Audio policy or silent failure fallback
+      }
+    }
+
+    /* =========================================================================
+       3. THREE.JS 3D CUBESAT RENDERING ENGINE
+       ========================================================================= */
+    let scene, camera, renderer, controls;
+    let cubeSatGroup, earthMesh, solarPanelMesh;
+
+    function initThreeCubeSat() {
+      const container = document.querySelector('.viewport-3d-box');
+      const canvas = document.getElementById('webgl-cubesat');
+      const width = container.clientWidth;
+      const height = container.clientHeight - 42; // exclude header
+
+      // Scene
+      scene = new THREE.Scene();
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
+      camera.position.set(3.2, 2.4, 4.0);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+
+      // OrbitControls for manual camera rotation
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxDistance = 14;
+      controls.minDistance = 1.5;
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xddeeff, 0.7);
+      scene.add(ambientLight);
+
+      const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
+      sunLight.position.set(10, 15, 8);
+      scene.add(sunLight);
+
+      const earthGlowLight = new THREE.DirectionalLight(0x0077ff, 0.8);
+      earthGlowLight.position.set(-8, -10, -5);
+      scene.add(earthGlowLight);
+
+      // Stars Particles Field
+      const starGeo = new THREE.BufferGeometry();
+      const starCount = 800;
+      const starPositions = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount * 3; i++) {
+        starPositions[i] = (Math.random() - 0.5) * 80;
+      }
+      starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+      const starMat = new THREE.PointsMaterial({ color: 0x90b5ff, size: 0.15, transparent: true, opacity: 0.8 });
+      const stars = new THREE.Points(starGeo, starMat);
+      scene.add(stars);
+
+      // Earth Horizon Atmosphere Sphere (distant background sphere)
+      const earthGeo = new THREE.SphereGeometry(18, 48, 48);
+      const earthMat = new THREE.MeshBasicMaterial({
+        color: 0x051a3a,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.18
+      });
+      earthMesh = new THREE.Mesh(earthGeo, earthMat);
+      earthMesh.position.set(0, -22, 0);
+      scene.add(earthMesh);
+
+      // BUILD DETAILED 1U CUBESAT ASSEMBLY
+      cubeSatGroup = new THREE.Group();
+
+      // 1. Aluminum 6061 Main Chassis Frame
+      const chassisGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
+      const chassisMat = new THREE.MeshStandardMaterial({
+        color: 0x1f2937,
+        metalness: 0.9,
+        roughness: 0.25,
+      });
+      const chassis = new THREE.Mesh(chassisGeo, chassisMat);
+      cubeSatGroup.add(chassis);
+
+      // 2. Solar Panels on 4 faces
+      const panelMat = new THREE.MeshStandardMaterial({
+        color: 0x0c274c,
+        metalness: 0.85,
+        roughness: 0.15,
+        emissive: 0x051329
+      });
+
+      // Front / Back / Left / Right photovoltaic cells
+      const solarFaceGeo = new THREE.PlaneGeometry(1.25, 1.25);
+      
+      const pFront = new THREE.Mesh(solarFaceGeo, panelMat);
+      pFront.position.z = 0.705;
+      cubeSatGroup.add(pFront);
+
+      const pBack = new THREE.Mesh(solarFaceGeo, panelMat);
+      pBack.position.z = -0.705;
+      pBack.rotation.y = Math.PI;
+      cubeSatGroup.add(pBack);
+
+      const pRight = new THREE.Mesh(solarFaceGeo, panelMat);
+      pRight.position.x = 0.705;
+      pRight.rotation.y = Math.PI / 2;
+      cubeSatGroup.add(pRight);
+
+      const pLeft = new THREE.Mesh(solarFaceGeo, panelMat);
+      pLeft.position.x = -0.705;
+      pLeft.rotation.y = -Math.PI / 2;
+      cubeSatGroup.add(pLeft);
+
+      // Gold-foil MLI Insulated Top Surface
+      const foilMat = new THREE.MeshStandardMaterial({
+        color: 0xd4af37,
+        metalness: 0.95,
+        roughness: 0.3
+      });
+      const pTop = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), foilMat);
+      pTop.position.y = 0.705;
+      pTop.rotation.x = -Math.PI / 2;
+      cubeSatGroup.add(pTop);
+
+      // Optical Nadir Camera Payload Lens (Bottom)
+      const lensMountGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.15, 32);
+      const lensMountMat = new THREE.MeshStandardMaterial({ color: 0x030712, metalness: 0.9, roughness: 0.1 });
+      const lensMount = new THREE.Mesh(lensMountGeo, lensMountMat);
+      lensMount.position.y = -0.72;
+      cubeSatGroup.add(lensMount);
+
+      const lensGlassGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.16, 32);
+      const lensGlassMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x0088cc, roughness: 0 });
+      const lensGlass = new THREE.Mesh(lensGlassGeo, lensGlassMat);
+      lensGlass.position.y = -0.725;
+      cubeSatGroup.add(lensGlass);
+
+      // Deployable Monopole Antennas (4 Corner Rods)
+      const antMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, metalness: 0.95, roughness: 0.1 });
+      for (let i = 0; i < 4; i++) {
+        const antGeo = new THREE.CylinderGeometry(0.015, 0.015, 1.8, 8);
+        const ant = new THREE.Mesh(antGeo, antMat);
+        const angle = (i * Math.PI) / 2 + Math.PI / 4;
+        ant.position.set(Math.cos(angle) * 0.72, 0.9, Math.sin(angle) * 0.72);
+        ant.rotation.z = (Math.cos(angle) > 0 ? -1 : 1) * 0.25;
+        ant.rotation.x = (Math.sin(angle) > 0 ? 1 : -1) * 0.25;
+        cubeSatGroup.add(ant);
+      }
+
+      // 3D Coordinate Axis Helper (Aerospace RGB = XYZ)
+      const axesHelper = new THREE.AxesHelper(1.8);
+      cubeSatGroup.add(axesHelper);
+
+      scene.add(cubeSatGroup);
+
+      // Handle Window Resize
+      window.addEventListener('resize', onThreeResize);
+
+      // Animation Loop
+      animateThree();
+    }
+
+    function onThreeResize() {
+      const container = document.querySelector('.viewport-3d-box');
+      if (!container || !renderer) return;
+      const width = container.clientWidth;
+      const height = container.clientHeight - 42;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    }
+
+    function animateThree() {
+      requestAnimationFrame(animateThree);
+
+      // Orient CubeSat matching live attitude angles (Euler to radians)
+      const r = (MissionEngine.telemetry.orientation.roll * Math.PI) / 180;
+      const p = (MissionEngine.telemetry.orientation.pitch * Math.PI) / 180;
+      const y = (MissionEngine.telemetry.orientation.yaw * Math.PI) / 180;
+
+      // Smooth quaternion interpolation (slerp effect)
+      cubeSatGroup.rotation.x += (p - cubeSatGroup.rotation.x) * 0.1;
+      cubeSatGroup.rotation.y += (y - cubeSatGroup.rotation.y) * 0.1;
+      cubeSatGroup.rotation.z += (r - cubeSatGroup.rotation.z) * 0.1;
+
+      // Earth slow orbital rotation
+      if (earthMesh) {
+        earthMesh.rotation.y += 0.0003;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    /* =========================================================================
+       4. 2D ORBITAL GROUND TRACK GENERATOR (CANVAS)
+       ========================================================================= */
+    function initGroundTrackCanvas() {
+      const canvas = document.getElementById('groundtrack-canvas');
+      const ctx = canvas.getContext('2d');
+
+      function resizeCanvas() {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight - 38;
+      }
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+
+      function drawMap() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const w = canvas.width;
+        const h = canvas.height;
+
+        // Draw Map Grid Lat/Lon lines
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.08)';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < w; x += w / 12) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0); ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+        for (let y = 0; y < h; y += h / 6) {
+          ctx.beginPath();
+          ctx.moveTo(0, y); ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+
+        // Draw Equator Line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        ctx.lineTo(w, h / 2);
+        ctx.stroke();
+
+        // Approximate Continental Outlines (Clean Vector Silhouette)
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.04)';
+        ctx.lineWidth = 1.2;
+
+        // Simplified continent geometries
+        ctx.beginPath();
+        // North America
+        ctx.moveTo(w * 0.12, h * 0.2);
+        ctx.lineTo(w * 0.28, h * 0.18);
+        ctx.lineTo(w * 0.25, h * 0.45);
+        ctx.lineTo(w * 0.18, h * 0.52);
+        ctx.lineTo(w * 0.10, h * 0.35);
+        ctx.closePath();
+        ctx.stroke(); ctx.fill();
+
+        // South America
+        ctx.beginPath();
+        ctx.moveTo(w * 0.24, h * 0.55);
+        ctx.lineTo(w * 0.33, h * 0.62);
+        ctx.lineTo(w * 0.28, h * 0.88);
+        ctx.lineTo(w * 0.22, h * 0.75);
+        ctx.closePath();
+        ctx.stroke(); ctx.fill();
+
+        // Europe / Africa
+        ctx.beginPath();
+        ctx.moveTo(w * 0.45, h * 0.22);
+        ctx.lineTo(w * 0.58, h * 0.20);
+        ctx.lineTo(w * 0.55, h * 0.45);
+        ctx.lineTo(w * 0.60, h * 0.78);
+        ctx.lineTo(w * 0.48, h * 0.82);
+        ctx.lineTo(w * 0.44, h * 0.48);
+        ctx.closePath();
+        ctx.stroke(); ctx.fill();
+
+        // Asia / Australia
+        ctx.beginPath();
+        ctx.moveTo(w * 0.62, h * 0.18);
+        ctx.lineTo(w * 0.88, h * 0.22);
+        ctx.lineTo(w * 0.82, h * 0.52);
+        ctx.lineTo(w * 0.68, h * 0.50);
+        ctx.closePath();
+        ctx.stroke(); ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(w * 0.82, h * 0.74, w * 0.06, 0, Math.PI * 2);
+        ctx.stroke(); ctx.fill();
+
+        // Draw Sine Orbital Ground Track Path (51.6° Inclination LEO Track)
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.6)';
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1.5;
+        for (let x = 0; x <= w; x += 4) {
+          const orbitX = (x / w) * Math.PI * 2;
+          const orbitY = (h / 2) + Math.sin(orbitX * 1.5 - (MissionEngine.metSeconds * 0.01)) * (h * 0.36);
+          if (x === 0) ctx.moveTo(x, orbitY);
+          else ctx.lineTo(x, orbitY);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]); // reset dash
+
+        // Draw CubeSat Sub-Satellite Target Indicator
+        const satX = ((MissionEngine.telemetry.gps.lon + 180) / 360) * w;
+        const satY = ((90 - MissionEngine.telemetry.gps.lat) / 180) * h;
+
+        // Ground track radius footprint circle
+        ctx.beginPath();
+        ctx.arc(satX, satY, 26, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Center Pulsing Satellite Blip
+        ctx.beginPath();
+        ctx.arc(satX, satY, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#00ffaa';
+        ctx.shadowColor = '#00ffaa';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0; // reset
+
+        // Satellite label
+        ctx.fillStyle = '#fff';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.fillText('ASTRA-2.0', satX + 8, satY - 6);
+
+        requestAnimationFrame(drawMap);
+      }
+      drawMap();
+    }
+
+    /* =========================================================================
+       5. REAL-TIME CHART.JS SETUP (OVERVIEW OSCILLOSCOPE)
+       ========================================================================= */
+    let overviewChart;
+    function initOverviewChart() {
+      const ctx = document.getElementById('canvas-overview-chart').getContext('2d');
+      const labels = MissionEngine.telemetry.temp.history.map(h => h.time);
+      const tempData = MissionEngine.telemetry.temp.history.map(h => h.val);
+      const gyroData = MissionEngine.telemetry.gyro.history.map(h => h.val * 10); // scale for visibility
+
+      overviewChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Temp (°C)',
+              data: tempData,
+              borderColor: '#00e5ff',
+              backgroundColor: 'rgba(0, 229, 255, 0.08)',
+              borderWidth: 2,
+              tension: 0.35,
+              fill: true,
+              pointRadius: 0
+            },
+            {
+              label: 'Gyro Rate (x10 °/s)',
+              data: gyroData,
+              borderColor: '#00ffaa',
+              borderWidth: 1.5,
+              tension: 0.2,
+              borderDash: [3, 3],
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { intersect: false, mode: 'index' },
+          plugins: {
+            legend: {
+              position: 'top',
+              align: 'end',
+              labels: {
+                color: '#8b9bb4',
+                font: { family: 'JetBrains Mono', size: 10 },
+                boxWidth: 10
+              }
+            },
+            tooltip: {
+              backgroundColor: 'rgba(9, 17, 36, 0.95)',
+              titleColor: '#00e5ff',
+              bodyFont: { family: 'JetBrains Mono' }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.04)' },
+              ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 6 }
+            },
+            y: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          }
+        }
+      });
+    }
+
+    /* =========================================================================
+       6. DYNAMIC SENSOR DEEP-DIVE MODAL SYSTEM
+       ========================================================================= */
+    let modalChart = null;
+
+    const SENSOR_META = {
+      temp: {
+        name: 'THERMAL MANAGEMENT // INTERNAL TEMP',
+        subtitle: 'SHT31-DIS PRECISION DIGITAL TEMPERATURE SENSOR',
+        unit: '°C',
+        field: 'temp',
+        icon: '<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>',
+        color: '#00e5ff'
+      },
+      humidity: {
+        name: 'ENVIRONMENT // PAYLOAD BAY HUMIDITY',
+        subtitle: 'CAPACITIVE RELATIVE HUMIDITY TRANSDUCER',
+        unit: '% RH',
+        field: 'humidity',
+        icon: '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>',
+        color: '#00ffaa'
+      },
+      pressure: {
+        name: 'BAROMETRIC ALTIMETRY & PRESSURE',
+        subtitle: 'BMP280 PIEZORESISTIVE ABSOLUTE BAROMETER',
+        unit: 'hPa',
+        field: 'pressure',
+        icon: '<circle cx="12" cy="12" r="10"/><path d="M16 12l-4-4-4 4M12 16V8"/>',
+        color: '#ffaa00'
+      },
+      accel: {
+        name: 'INERTIAL MEASUREMENT // 3-AXIS ACCELEROMETER',
+        subtitle: 'MPU-6050 MICRO-ELECTROMECHANICAL ACCELEROMETER (±2G)',
+        unit: 'g',
+        field: 'accel',
+        icon: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+        color: '#00e5ff'
+      },
+      gyro: {
+        name: 'ADCS DYNAMICS // 3-AXIS GYROSCOPE RATE',
+        subtitle: 'TRIAXIAL ANGULAR RATE GYROSCOPIC INTEGRATOR',
+        unit: '°/s',
+        field: 'gyro',
+        icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+        color: '#ff3366'
+      },
+      orientation: {
+        name: 'ATTITUDE DETERMINATION // EULER ANGLES',
+        subtitle: 'EXTENDED KALMAN FILTER QUATERNION RESOLUTION',
+        unit: '°',
+        field: 'orientation',
+        icon: '<circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/>',
+        color: '#00e5ff'
+      },
+      gps: {
+        name: 'ORBITAL EPHEMERIS // GNSS RECEIVER',
+        subtitle: 'U-BLOX NEO-M8N L1 SPACE-QUALIFIED COLD-START ENGINE',
+        unit: 'km',
+        field: 'gps',
+        icon: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+        color: '#00ffaa'
+      },
+      system: {
+        name: 'OBC POWER BUS & ESP32 SYSTEM STATUS',
+        subtitle: 'DIRECT RF TELEMETRY PACKET DECODER // EPS 2S-BATT BUS',
+        unit: 'V',
+        field: 'system',
+        icon: '<rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>',
+        color: '#00e5ff'
+      }
+    };
+
+    function openSensorModal(sensorKey) {
+      MissionEngine.activeModalSensor = sensorKey;
+      const meta = SENSOR_META[sensorKey];
+      if (!meta) return;
+
+      const modal = document.getElementById('sensor-modal');
+      document.getElementById('modal-sensor-name').innerText = meta.name;
+      document.getElementById('modal-sensor-subtitle').innerText = meta.subtitle;
+      document.getElementById('modal-icon').innerHTML = meta.icon;
+
+      // Set units in stat chips
+      for (let i = 1; i <= 4; i++) {
+        document.getElementById(`m-unit-${i}`).innerText = meta.unit;
+      }
+
+      updateModalViewData();
+      modal.classList.add('active');
+    }
+
+    function closeSensorModal(e) {
+      if (e && e.target !== e.currentTarget && !e.target.classList.contains('modal-close-btn')) return;
+      document.getElementById('sensor-modal').classList.remove('active');
+      MissionEngine.activeModalSensor = null;
+    }
+
+    function updateModalViewData() {
+      const key = MissionEngine.activeModalSensor;
+      if (!key) return;
+      const meta = SENSOR_META[key];
+      const sensorObj = MissionEngine.telemetry[key];
+      const history = sensorObj.history;
+      if (!history || history.length === 0) return;
+
+      // Numerical values extraction
+      let values = [];
+      if (key === 'orientation') {
+        values = history.map(h => h.yaw);
+      } else if (key === 'gps') {
+        values = history.map(h => h.alt);
+      } else {
+        values = history.map(h => h.val !== undefined ? h.val : h.current);
+      }
+
+      const cur = values[values.length - 1];
+      const min = Math.min(...values).toFixed(2);
+      const max = Math.max(...values).toFixed(2);
+      const avg = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2);
+
+      document.getElementById('m-stat-cur').innerText = cur;
+      document.getElementById('m-stat-min').innerText = min;
+      document.getElementById('m-stat-max').innerText = max;
+      document.getElementById('m-stat-avg').innerText = avg;
+
+      // Build or update Chart in modal
+      const ctx = document.getElementById('modal-canvas-chart').getContext('2d');
+      const timeLabels = history.map(h => h.time);
+
+      if (modalChart) {
+        modalChart.destroy();
+      }
+
+      modalChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: timeLabels,
+          datasets: [{
+            label: `${meta.name} (${meta.unit})`,
+            data: values,
+            borderColor: meta.color,
+            backgroundColor: `${meta.color}15`,
+            borderWidth: 2,
+            fill: true,
+            pointRadius: 2,
+            pointHoverRadius: 6,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: { color: '#8b9bb4', font: { family: 'JetBrains Mono' } }
+            },
+            tooltip: {
+              backgroundColor: '#030712',
+              titleColor: meta.color,
+              bodyFont: { family: 'JetBrains Mono' }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 8 }
+            },
+            y: {
+              grid: { color: 'rgba(255, 255, 255, 0.08)' },
+              ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          }
+        }
+      });
+
+      // Populate Audit Table (last 8 frames)
+      const tbody = document.getElementById('modal-tbody');
+      tbody.innerHTML = '';
+      const slice = [...history].reverse().slice(0, 8);
+
+      slice.forEach((row, idx) => {
+        const valDisp = row.val !== undefined ? `${row.val} ${meta.unit}` : (row.alt ? `${row.alt} km` : `${row.yaw}°`);
+        const delta = idx < slice.length - 1 ? (row.val - slice[idx+1].val).toFixed(2) : '0.00';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.time} UTC</td>
+          <td style="color:#fff; font-weight:700;">${valDisp}</td>
+          <td style="color:${delta >= 0 ? '#00ffaa' : '#00e5ff'}">${delta >= 0 ? '+' + delta : delta}</td>
+          <td><span style="color:#00ffaa;">● NOMINAL</span></td>
+          <td>${row.vbatt ? row.vbatt + ' V' : '8.24 V'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* =========================================================================
+       7. SIMULATION & TELEMETRY STREAM UPDATE CYCLE (1.0 HZ)
+       ========================================================================= */
+    setInterval(() => {
+      // 1. Advance Mission Clocks
+      MissionEngine.metSeconds++;
+      const now = new Date();
+      document.getElementById('clock-utc').innerText = now.toISOString().substr(11, 8) + ' UTC';
+
+      const d = Math.floor(MissionEngine.metSeconds / 86400);
+      const h = Math.floor((MissionEngine.metSeconds % 86400) / 3600);
+      const m = Math.floor((MissionEngine.metSeconds % 3600) / 60);
+      const s = MissionEngine.metSeconds % 60;
+      const pad = (n) => String(n).padStart(2, '0');
+      document.getElementById('clock-met').innerText = `T+${String(d).padStart(3, '0')}:${pad(h)}:${pad(m)}:${pad(s)}`;
+
+      // 2. Increment Packet & Rates
+      MissionEngine.packetCounter++;
+      document.getElementById('val-pkt-count').innerText = MissionEngine.packetCounter.toLocaleString();
+
+      const timeStr = now.toISOString().substr(11, 8);
+
+      // 3. Sensor Drift Physics
+      // Temp
+      const tempDrift = MissionEngine.anomalyActive ? +(0.8 + Math.random() * 0.5) : +(Math.sin(MissionEngine.metSeconds * 0.05) * 0.15 + (Math.random() * 0.08 - 0.04));
+      MissionEngine.telemetry.temp.prev = MissionEngine.telemetry.temp.current;
+      MissionEngine.telemetry.temp.current = +(MissionEngine.telemetry.temp.current + tempDrift).toFixed(2);
+      document.getElementById('val-temp').innerText = MissionEngine.telemetry.temp.current.toFixed(1);
+      document.getElementById('prev-temp').innerText = MissionEngine.telemetry.temp.prev.toFixed(1);
+
+      // Temp warning indicator
+      if (MissionEngine.telemetry.temp.current > 40) {
+        document.getElementById('badge-temp').innerText = 'THERMAL CRIT';
+        document.getElementById('badge-temp').className = 'card-badge crit';
+      } else {
+        document.getElementById('badge-temp').innerText = 'NOMINAL';
+        document.getElementById('badge-temp').className = 'card-badge';
+      }
+
+      // Humidity
+      const humJitter = +(Math.random() * 0.2 - 0.1).toFixed(2);
+      MissionEngine.telemetry.humidity.prev = MissionEngine.telemetry.humidity.current;
+      MissionEngine.telemetry.humidity.current = +(Math.max(15, Math.min(60, MissionEngine.telemetry.humidity.current + humJitter))).toFixed(1);
+      document.getElementById('val-humidity').innerText = MissionEngine.telemetry.humidity.current;
+      document.getElementById('prev-humidity').innerText = MissionEngine.telemetry.humidity.prev;
+
+      // Pressure
+      const pressDrift = +(Math.random() * 0.06 - 0.03).toFixed(2);
+      MissionEngine.telemetry.pressure.current = +(MissionEngine.telemetry.pressure.current + pressDrift).toFixed(2);
+      document.getElementById('val-pressure').innerText = MissionEngine.telemetry.pressure.current.toFixed(2);
+
+      // Accelerometer
+      const ax = +(0.02 + (Math.random() * 0.04 - 0.02)).toFixed(3);
+      const ay = +(-0.01 + (Math.random() * 0.04 - 0.02)).toFixed(3);
+      const az = +(0.99 + (Math.random() * 0.04 - 0.02)).toFixed(3);
+      const aMag = +(Math.sqrt(ax*ax + ay*ay + az*az)).toFixed(3);
+      MissionEngine.telemetry.accel.x = ax;
+      MissionEngine.telemetry.accel.y = ay;
+      MissionEngine.telemetry.accel.z = az;
+      MissionEngine.telemetry.accel.mag = aMag;
+      document.getElementById('val-accel-mag').innerText = aMag.toFixed(3);
+      document.getElementById('val-acc-x').innerText = (ax >= 0 ? '+' : '') + ax;
+      document.getElementById('val-acc-y').innerText = (ay >= 0 ? '+' : '') + ay;
+      document.getElementById('val-acc-z').innerText = (az >= 0 ? '+' : '') + az;
+      document.getElementById('bar-acc-x').style.width = Math.min(100, Math.max(0, (ax + 1) * 50)) + '%';
+      document.getElementById('bar-acc-y').style.width = Math.min(100, Math.max(0, (ay + 1) * 50)) + '%';
+      document.getElementById('bar-acc-z').style.width = Math.min(100, Math.max(0, az * 100)) + '%';
+
+      // Gyroscope & Detumble
+      let gx = +(Math.sin(MissionEngine.metSeconds * 0.1) * 0.4 + (Math.random() * 0.04 - 0.02)).toFixed(2);
+      let gy = +(Math.cos(MissionEngine.metSeconds * 0.1) * 0.3 + (Math.random() * 0.04 - 0.02)).toFixed(2);
+      let gz = +(0.5 + (Math.random() * 0.05 - 0.025)).toFixed(2);
+
+      if (MissionEngine.anomalyActive) {
+        gx = +(gx * 4.2).toFixed(2);
+        gy = +(gy * 3.8).toFixed(2);
+      }
+
+      const gMag = +(Math.sqrt(gx*gx + gy*gy + gz*gz)).toFixed(2);
+      MissionEngine.telemetry.gyro.x = gx;
+      MissionEngine.telemetry.gyro.y = gy;
+      MissionEngine.telemetry.gyro.z = gz;
+      MissionEngine.telemetry.gyro.mag = gMag;
+      document.getElementById('val-gyro-mag').innerText = gMag.toFixed(2);
+      document.getElementById('val-gyr-x').innerText = (gx >= 0 ? '+' : '') + gx;
+      document.getElementById('val-gyr-y').innerText = (gy >= 0 ? '+' : '') + gy;
+      document.getElementById('val-gyr-z').innerText = (gz >= 0 ? '+' : '') + gz;
+
+      // Orientation (Euler integration)
+      MissionEngine.telemetry.orientation.roll = +((MissionEngine.telemetry.orientation.roll + gx * 0.05)).toFixed(2);
+      MissionEngine.telemetry.orientation.pitch = +((MissionEngine.telemetry.orientation.pitch + gy * 0.05)).toFixed(2);
+      MissionEngine.telemetry.orientation.yaw = +((MissionEngine.telemetry.orientation.yaw + gz * 0.15) % 360).toFixed(2);
+
+      document.getElementById('hud-roll').innerText = (MissionEngine.telemetry.orientation.roll >= 0 ? '+' : '') + MissionEngine.telemetry.orientation.roll + '°';
+      document.getElementById('hud-pitch').innerText = (MissionEngine.telemetry.orientation.pitch >= 0 ? '+' : '') + MissionEngine.telemetry.orientation.pitch + '°';
+      document.getElementById('hud-yaw').innerText = MissionEngine.telemetry.orientation.yaw + '°';
+      document.getElementById('card-roll-val').innerText = document.getElementById('hud-roll').innerText;
+      document.getElementById('card-pitch-val').innerText = document.getElementById('hud-pitch').innerText;
+      document.getElementById('card-yaw-val').innerText = document.getElementById('hud-yaw').innerText;
+
+      // GPS Ground Track Progression
+      MissionEngine.telemetry.gps.lon = +((MissionEngine.telemetry.gps.lon + 0.08));
+      if (MissionEngine.telemetry.gps.lon > 180) MissionEngine.telemetry.gps.lon = -180;
+      MissionEngine.telemetry.gps.lat = +(Math.sin(MissionEngine.metSeconds * 0.02) * 51.6).toFixed(4);
+
+      document.getElementById('val-gps-lat').innerText = Math.abs(MissionEngine.telemetry.gps.lat) + '° ' + (MissionEngine.telemetry.gps.lat >= 0 ? 'N' : 'S');
+      document.getElementById('val-gps-lon').innerText = Math.abs(MissionEngine.telemetry.gps.lon.toFixed(4)) + '° ' + (MissionEngine.telemetry.gps.lon >= 0 ? 'E' : 'W');
+
+      // Append to FIFO history queues
+      const snap = { time: timeStr, vbatt: 8.24 };
+      MissionEngine.telemetry.temp.history.push({ ...snap, val: MissionEngine.telemetry.temp.current });
+      MissionEngine.telemetry.humidity.history.push({ ...snap, val: MissionEngine.telemetry.humidity.current });
+      MissionEngine.telemetry.pressure.history.push({ ...snap, val: MissionEngine.telemetry.pressure.current });
+      MissionEngine.telemetry.accel.history.push({ ...snap, val: aMag, x: ax, y: ay, z: az });
+      MissionEngine.telemetry.gyro.history.push({ ...snap, val: gMag, x: gx, y: gy, z: gz });
+      MissionEngine.telemetry.orientation.history.push({ ...snap, ...MissionEngine.telemetry.orientation });
+      MissionEngine.telemetry.gps.history.push({ ...snap, ...MissionEngine.telemetry.gps });
+      MissionEngine.telemetry.system.history.push({ ...snap, val: 8.24 });
+
+      // Cap histories to 35 frames
+      for (const key in MissionEngine.telemetry) {
+        if (MissionEngine.telemetry[key].history && MissionEngine.telemetry[key].history.length > 35) {
+          MissionEngine.telemetry[key].history.shift();
+        }
+      }
+
+      // Update Overview Chart
+      if (overviewChart) {
+        overviewChart.data.labels.push(timeStr);
+        overviewChart.data.datasets[0].data.push(MissionEngine.telemetry.temp.current);
+        overviewChart.data.datasets[1].data.push(gMag * 10);
+        if (overviewChart.data.labels.length > 30) {
+          overviewChart.data.labels.shift();
+          overviewChart.data.datasets[0].data.shift();
+          overviewChart.data.datasets[1].data.shift();
+        }
+        overviewChart.update('none');
+      }
+
+      // If modal is currently open, refresh its data in place
+      if (MissionEngine.activeModalSensor) {
+        updateModalViewData();
+      }
+
+      // Bottom Terminal Log Stream ticker
+      document.getElementById('term-log-time').innerText = `[${timeStr}.${pad(Math.floor(Math.random() * 999))}]`;
+      document.getElementById('term-log-content').innerText = `FRAME #${MissionEngine.packetCounter} -> TEMP: ${MissionEngine.telemetry.temp.current}°C | ADCS RATE: ${gMag}°/s | PRESS: ${MissionEngine.telemetry.pressure.current}hPa | BATT: 8.24V | LINK: 9.6kbps OK`;
+
+      // Telemetry chirp sound
+      playTelemetryBeep(1400, 0.03);
+    }, 1000);
+
+    /* =========================================================================
+       8. BUTTON HANDLERS, ANOMALY INJECTION & TOAST SYSTEM
+       ========================================================================= */
+    function showToast(message, isCrit = false) {
+      const toast = document.getElementById('toast-notification');
+      document.getElementById('toast-msg').innerText = message;
+      if (isCrit) {
+        toast.classList.add('crit');
+      } else {
+        toast.classList.remove('crit');
+      }
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 3800);
+    }
+
+    // Audio Toggle Button
+    document.getElementById('btn-audio-toggle').addEventListener('click', function() {
+      MissionEngine.audioEnabled = !MissionEngine.audioEnabled;
+      this.classList.toggle('active', MissionEngine.audioEnabled);
+      document.getElementById('audio-btn-label').innerText = MissionEngine.audioEnabled ? 'AUDIO: ON' : 'AUDIO: OFF';
+      showToast(MissionEngine.audioEnabled ? 'GROUND STATION TELEMETRY CHIRPS ENABLED' : 'MISSION CHIRPS MUTED');
+    });
+
+    // Detumble ADCS B-Dot Algorithm Button
+    document.getElementById('btn-detumble').addEventListener('click', function() {
+      MissionEngine.anomalyActive = false;
+      MissionEngine.telemetry.gyro.x = 0.04;
+      MissionEngine.telemetry.gyro.y = -0.02;
+      MissionEngine.telemetry.gyro.z = 0.12;
+      MissionEngine.telemetry.orientation.roll = 0.05;
+      MissionEngine.telemetry.orientation.pitch = -0.02;
+      showToast('B-DOT DETUMBLE COMMAND UPLINKED -> STABILIZATION ENGAGED');
+      playTelemetryBeep(2100, 0.12);
+    });
+
+    // Anomaly Simulator Toggle
+    document.getElementById('btn-sim-anomaly').addEventListener('click', function() {
+      MissionEngine.anomalyActive = !MissionEngine.anomalyActive;
+      if (MissionEngine.anomalyActive) {
+        this.classList.add('active');
+        showToast('CRITICAL TELEMETRY ALERT: THERMAL SPIKE & HIGH TUMBLE INJECTED!', true);
+        playTelemetryBeep(600, 0.3);
+      } else {
+        this.classList.remove('active');
+        MissionEngine.telemetry.temp.current = 24.2;
+        showToast('SIMULATED ANOMALY CLEARED. SYSTEM RETURNED TO NOMINAL.');
+      }
+    });
+
+    // Reset Three.js Camera Button
+    document.getElementById('btn-reset-cam').addEventListener('click', function() {
+      if (camera && controls) {
+        camera.position.set(3.2, 2.4, 4.0);
+        controls.target.set(0, 0, 0);
+        controls.update();
+        showToast('3D CAMERA VIEWPORT RESET TO PRIMARY NADIR VECTOR');
+      }
+    });
+
+    // Toggle CubeSat Wireframe Button
+    document.getElementById('btn-toggle-wireframe').addEventListener('click', function() {
+      MissionEngine.isWireframe = !MissionEngine.isWireframe;
+      this.classList.toggle('active', MissionEngine.isWireframe);
+      if (cubeSatGroup) {
+        cubeSatGroup.traverse((child) => {
+          if (child.isMesh && child.material) {
+            child.material.wireframe = MissionEngine.isWireframe;
+          }
+        });
+      }
+      showToast(MissionEngine.isWireframe ? 'CUBESAT CAD WIREFRAME RENDER ACTIVE' : 'SURFACE TEXTURES RESTORED');
+    });
+
+    // Export Telemetry to CSV
+    function exportSensorCSV() {
+      const key = MissionEngine.activeModalSensor;
+      if (!key) return;
+      const history = MissionEngine.telemetry[key].history;
+      let csvContent = 'data:text/csv;charset=utf-8,TIMESTAMP_UTC,VALUE,UNIT\n';
+      history.forEach(row => {
+        csvContent += `${row.time},${row.val || row.alt || row.yaw},${SENSOR_META[key].unit}\n`;
+      });
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `ASTRA_${key.toUpperCase()}_TELEMETRY.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(`EXPORTED ${history.length} TELEMETRY FRAMES TO CSV`);
+    }
+
+    // Manual Sensor Calibration Trigger
+    function triggerManualCalibrate() {
+      showToast('SENSOR BIAS COMPENSATED -> ZERO-POINT CALIBRATION COMMITTED TO FRAM');
+      playTelemetryBeep(1800, 0.08);
+    }
+
+    // Keyboard Shortcuts (Esc closes modal)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSensorModal(null);
+    });
+
+    /* =========================================================================
+       9. SYSTEM BOOTSTRAP INITIALIZATION
+       ========================================================================= */
+    window.addEventListener('DOMContentLoaded', () => {
+      initThreeCubeSat();
+      initGroundTrackCanvas();
+      initOverviewChart();
+      showToast('ASTRA ORBIT 2.0 GROUND CONTROL STATION SYNCHRONIZED');
+    });
+  </script>
+</body>
+</html>
