@@ -1,1637 +1,560 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ASTRA ORBIT 2.0 – CubeSat Mission Control</title>
-  
-  <!-- EXTERNAL CDN LIBRARIES -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
-  <style>
-    :root {
-      --bg-deep: #050811;
-      --bg-panel: #0b1124;
-      --bg-card: #101935;
-      --border-color: #1a2952;
-      --accent-cyan: #00e5ff;
-      --accent-blue: #0077ff;
-      --text-main: #f0f4fc;
-      --text-muted: #798bb4;
-      --status-green: #00e676;
-      --status-yellow: #ffea00;
-      --status-red: #ff1744;
-      --font-mono: "SF Mono", "Fira Code", "Courier New", monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      background-color: var(--bg-deep);
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow-x: hidden;
-    }
-
-    .stars-overlay {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-image: 
-        radial-gradient(1px 1px at 20px 30px, #ffffff, rgba(0,0,0,0)),
-        radial-gradient(1.5px 1.5px at 150px 180px, #00e5ff, rgba(0,0,0,0)),
-        radial-gradient(1px 1px at 300px 90px, #ffffff, rgba(0,0,0,0));
-      background-size: 400px 400px;
-      opacity: 0.25;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* MISSION CONTROL HEADER */
-    .mission-header {
-      position: relative;
-      z-index: 10;
-      background-color: var(--bg-panel);
-      border-bottom: 1px solid var(--border-color);
-      padding: 12px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .logo-area {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .mission-insignia {
-      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
-      color: #000;
-      font-weight: 900;
-      font-size: 1.1rem;
-      padding: 8px 12px;
-      border-radius: 4px;
-      letter-spacing: 1px;
-    }
-
-    .mission-header h1 {
-      font-size: 1.3rem;
-      letter-spacing: 2px;
-      font-weight: 800;
-      color: #fff;
-    }
-
-    .subtitle {
-      font-size: 0.65rem;
-      letter-spacing: 1.5px;
-      color: var(--text-muted);
-    }
-
-    .header-controls {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .status-badge {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      padding: 6px 12px;
-      border-radius: 2px;
-      background-color: #060a17;
-      border: 1px solid var(--border-color);
-      color: var(--text-muted);
-      transition: all 0.3s ease;
-    }
-
-    .status-badge.connected {
-      border-color: var(--accent-cyan);
-      color: var(--accent-cyan);
-    }
-
-    .status-badge.live {
-      border-color: var(--status-green);
-      color: var(--status-green);
-      box-shadow: 0 0 10px rgba(0, 230, 118, 0.2);
-    }
-
-    .btn {
-      font-family: var(--font-sans);
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 1px;
-      padding: 8px 16px;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .btn-primary {
-      background-color: var(--accent-cyan);
-      color: #000;
-    }
-
-    .btn-primary:hover {
-      background-color: #66efff;
-      box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
-    }
-
-    .btn-danger {
-      background-color: var(--status-red);
-      color: #fff;
-    }
-
-    .btn-secondary {
-      background-color: var(--border-color);
-      color: #fff;
-    }
-
-    .btn-secondary:hover {
-      background-color: #263c75;
-    }
-
-    .hidden { display: none !important; }
-
-    /* NAVIGATION TABS */
-    .nav-bar {
-      position: relative;
-      z-index: 10;
-      display: flex;
-      background-color: var(--bg-deep);
-      border-bottom: 1px solid var(--border-color);
-      padding: 0 24px;
-    }
-
-    .nav-tab {
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 0.75rem;
-      font-weight: 700;
-      letter-spacing: 1.5px;
-      padding: 14px 20px;
-      cursor: pointer;
-      position: relative;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s ease;
-    }
-
-    .nav-tab:hover {
-      color: #fff;
-    }
-
-    .nav-tab.active {
-      color: var(--accent-cyan);
-      border-bottom-color: var(--accent-cyan);
-    }
-
-    /* MAIN CONTAINER */
-    .content-container {
-      position: relative;
-      z-index: 5;
-      flex: 1;
-      padding: 24px;
-    }
-
-    .tab-pane {
-      display: none;
-    }
-
-    .tab-pane.active {
-      display: block;
-    }
-
-    /* TELEMETRY METRIC CARDS */
-    .grid-container {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-
-    .telemetry-card {
-      background-color: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      padding: 16px;
-      position: relative;
-      transition: transform 0.15s ease, border-color 0.15s ease;
-    }
-
-    .telemetry-card.clickable {
-      cursor: pointer;
-    }
-
-    .telemetry-card.clickable:hover {
-      transform: translateY(-2px);
-      border-color: var(--accent-cyan);
-    }
-
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.7rem;
-      font-weight: 700;
-      color: var(--text-muted);
-      letter-spacing: 1px;
-    }
-
-    .badge {
-      font-size: 0.65rem;
-      padding: 2px 6px;
-      border-radius: 2px;
-      font-family: var(--font-mono);
-      background-color: #1a233a;
-      color: var(--text-muted);
-      border: 1px solid transparent;
-    }
-
-    .badge-online {
-      background-color: rgba(0, 230, 118, 0.15);
-      color: var(--status-green);
-      border: 1px solid var(--status-green);
-    }
-
-    .badge-error {
-      background-color: rgba(255, 23, 68, 0.15);
-      color: var(--status-red);
-      border: 1px solid var(--status-red);
-    }
-
-    .card-metric {
-      font-family: var(--font-mono);
-      font-size: 2.2rem;
-      font-weight: 700;
-      color: #fff;
-      margin: 12px 0 8px 0;
-    }
-
-    .card-metric .unit {
-      font-size: 1rem;
-      color: var(--text-muted);
-    }
-
-    .card-stats {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-      border-top: 1px solid var(--border-color);
-      padding-top: 8px;
-    }
-
-    .card-multi-metric {
-      font-family: var(--font-mono);
-      font-size: 1rem;
-      margin: 12px 0;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .card-subtext {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-    }
-
-    /* SPLIT VIEW (3D MINI & PROFILE GRAPH) */
-    .split-view {
-      display: grid;
-      grid-template-columns: 1fr 1.6fr;
-      gap: 16px;
-    }
-
-    @media (max-width: 900px) {
-      .split-view {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .panel-box {
-      background-color: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      padding: 16px;
-    }
-
-    .panel-box h3 {
-      font-size: 0.8rem;
-      letter-spacing: 1.5px;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-    }
-
-    .canvas-3d {
-      width: 100%;
-      height: 280px;
-      background-color: #03060f;
-      border-radius: 4px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .graph-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
-    }
-
-    .filter-group {
-      display: flex;
-      gap: 4px;
-    }
-
-    .btn-filter {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      color: var(--text-muted);
-      font-size: 0.65rem;
-      padding: 4px 8px;
-      cursor: pointer;
-      border-radius: 2px;
-    }
-
-    .btn-filter.active {
-      border-color: var(--accent-cyan);
-      color: var(--accent-cyan);
-    }
-
-    .canvas-container {
-      position: relative;
-      height: 240px;
-      width: 100%;
-    }
-
-    /* LIVE TELEMETRY GRAPHS TAB */
-    .graph-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-      gap: 16px;
-    }
-
-    .graph-card {
-      background-color: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      padding: 16px;
-      border-radius: 4px;
-      height: 280px;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .graph-card h4 {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      letter-spacing: 1px;
-      margin-bottom: 12px;
-    }
-
-    .graph-card .chart-wrapper {
-      position: relative;
-      flex: 1;
-      width: 100%;
-      height: 100%;
-    }
-
-    /* 3D ATTITUDE VIEWPORT */
-    .attitude-layout {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 16px;
-      height: calc(100vh - 200px);
-      min-height: 500px;
-    }
-
-    @media (max-width: 900px) {
-      .attitude-layout {
-        grid-template-columns: 1fr;
-        height: auto;
-      }
-    }
-
-    .attitude-viewport {
-      background-color: #03060f;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      position: relative;
-      overflow: hidden;
-      min-height: 400px;
-    }
-
-    .attitude-telemetry-panel {
-      background-color: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      padding: 20px;
-      border-radius: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .data-row {
-      display: flex;
-      justify-content: space-between;
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      padding: 6px 0;
-      border-bottom: 1px solid #141f3d;
-    }
-
-    .note {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      line-height: 1.4;
-      margin-top: auto;
-    }
-
-    /* GPS VIEWPORT */
-    .gps-readout-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-      margin-top: 16px;
-    }
-
-    .gps-readout-item {
-      background-color: var(--bg-card);
-      padding: 16px;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .gps-readout-item span {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .gps-readout-item b {
-      font-family: var(--font-mono);
-      font-size: 1.3rem;
-      color: var(--accent-cyan);
-    }
-
-    /* SYSTEM HEALTH TABLE */
-    .health-table-box {
-      background-color: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      padding: 20px;
-      border-radius: 4px;
-    }
-
-    .health-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.8rem;
-      margin-top: 16px;
-    }
-
-    .health-table th, .health-table td {
-      padding: 12px 16px;
-      text-align: left;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .health-table th {
-      color: var(--text-muted);
-      font-weight: 700;
-      letter-spacing: 1px;
-    }
-
-    .health-table td {
-      font-family: var(--font-mono);
-    }
-
-    /* SENSOR MODAL */
-    .modal {
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(3, 6, 15, 0.85);
-      backdrop-filter: blur(4px);
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .modal-content {
-      background-color: var(--bg-panel);
-      border: 1px solid var(--accent-cyan);
-      width: 90%;
-      max-width: 800px;
-      border-radius: 6px;
-      padding: 24px;
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid var(--border-color);
-      padding-bottom: 12px;
-    }
-
-    .btn-close {
-      background: none;
-      border: none;
-      color: #fff;
-      font-size: 1.5rem;
-      cursor: pointer;
-    }
-
-    .modal-body {
-      margin-top: 16px;
-    }
-
-    .modal-metric {
-      font-family: var(--font-mono);
-      font-size: 2.5rem;
-      font-weight: 700;
-      color: var(--accent-cyan);
-      text-align: center;
-    }
-
-    .modal-stats {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      margin: 12px 0 20px 0;
-      font-family: var(--font-mono);
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-
-    .modal-chart-container {
-      height: 300px;
-      position: relative;
-    }
-
-    /* FOOTER */
-    .mission-footer {
-      background-color: var(--bg-panel);
-      border-top: 1px solid var(--border-color);
-      padding: 8px 24px;
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-      display: flex;
-      justify-content: space-between;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASTRA ORBIT 2.0 | CubeSat Dashboard</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;background:#07111f;color:#e8f2ff;
+ font-family:Arial,sans-serif;padding:20px
+}
+header{
+ display:flex;justify-content:space-between;align-items:center;
+ flex-wrap:wrap;gap:15px;margin-bottom:22px
+}
+h1{margin:0;color:#48c8ff;font-size:25px}
+h2{font-size:17px;margin-top:0;color:#8edfff}
+p{color:#9aafc5}
+button{
+ border:0;padding:12px 18px;border-radius:7px;
+ background:#078bd1;color:white;font-weight:bold;cursor:pointer
+}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.disconnect{background:#bd3d4a}
+.status{
+ background:#13243a;padding:12px 16px;border-radius:8px;
+ display:inline-block;margin:4px
+}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;
+ background:#ef4444;margin-right:7px}
+.dot.online{background:#22c55e}
+.grid{
+ display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+ gap:14px;margin-bottom:18px
+}
+.card,.panel{
+ background:#102139;border:1px solid #203c5b;
+ border-radius:11px;padding:17px
+}
+.card small{color:#91a9c2}
+.value{font-size:27px;font-weight:bold;margin:12px 0;color:#53cbff}
+.unit{font-size:13px;color:#9db5cc}
+.section{margin-top:22px}
+.two{
+ display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+ gap:15px
+}
+.sensor-grid{
+ display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+ gap:10px
+}
+.axis{
+ background:#0a192b;padding:12px;border-radius:8px
+}
+canvas{max-height:250px}
+#cube{width:100%;height:300px}
+.note{font-size:12px;color:#8ca6bf;line-height:1.6}
+.footer{text-align:center;margin-top:35px;color:#7891a9;font-size:12px}
+</style>
 </head>
+
 <body>
-  <div class="stars-overlay"></div>
-  
-  <!-- MISSION CONTROL HEADER -->
-  <header class="mission-header">
-    <div class="logo-area">
-      <div class="mission-insignia">AO-2</div>
-      <div>
-        <h1>ASTRA ORBIT 2.0</h1>
-        <p class="subtitle">REAL-TIME CUBESAT TELEMETRY & FLIGHT OPERATIONS</p>
-      </div>
-    </div>
-    
-    <div class="header-controls">
-      <div class="status-badge" id="espStatus">ESP32: DISCONNECTED</div>
-      <div class="status-badge" id="telemStatus">TELEMETRY: WAITING FOR CONNECTION</div>
-      <div class="status-badge" id="packetBadge">PACKETS: 0</div>
-      <button id="btnConnect" class="btn btn-primary">CONNECT ESP32</button>
-      <button id="btnDisconnect" class="btn btn-danger hidden">DISCONNECT</button>
-    </div>
-  </header>
 
-  <!-- NAVIGATION TABS -->
-  <nav class="nav-bar">
-    <button class="nav-tab active" data-tab="overview">OVERVIEW</button>
-    <button class="nav-tab" data-tab="telemetry">LIVE TELEMETRY</button>
-    <button class="nav-tab" data-tab="attitude">3D ATTITUDE</button>
-    <button class="nav-tab" data-tab="gps">GPS & ORBIT</button>
-    <button class="nav-tab" data-tab="health">SYSTEM HEALTH</button>
-  </nav>
+<header>
+ <div>
+  <h1>🚀 ASTRA ORBIT 2.0</h1>
+  <p>CubeSat Mission Control Dashboard</p>
+ </div>
+ <div>
+  <button id="connectBtn" onclick="connectESP32()">CONNECT ESP32</button>
+  <button id="disconnectBtn" class="disconnect" onclick="disconnectESP32()" disabled>DISCONNECT</button>
+ </div>
+</header>
 
-  <!-- MAIN VIEW CONTAINER -->
-  <main class="content-container">
+<div class="status">
+ <span id="connectionDot" class="dot"></span>
+ ESP32: <strong id="connectionStatus">DISCONNECTED</strong>
+</div>
+<div class="status">
+ TELEMETRY: <strong id="telemetryStatus">WAITING</strong>
+</div>
+<div class="status">
+ PACKETS: <strong id="packetCount">0</strong>
+</div>
+<div class="status">
+ RSSI: <strong id="rssi">0</strong> dBm
+</div>
 
-    <!-- TAB 1: MISSION OVERVIEW -->
-    <section id="tab-overview" class="tab-pane active">
-      <div class="grid-container">
-        
-        <!-- CARD: TEMPERATURE -->
-        <div class="telemetry-card clickable" onclick="openDetail('temp')">
-          <div class="card-header">
-            <span>TEMPERATURE (BMP/DHT)</span>
-            <span class="badge" id="badge-temp">OFFLINE</span>
-          </div>
-          <div class="card-metric" id="val-temp">0.00 <span class="unit">°C</span></div>
-          <div class="card-stats">
-            <span>MIN: <b id="min-temp">0.0</b></span>
-            <span>MAX: <b id="max-temp">0.0</b></span>
-            <span>AVG: <b id="avg-temp">0.0</b></span>
-          </div>
-        </div>
+<section class="section">
+<h2>ENVIRONMENTAL SENSORS</h2>
+<div class="grid">
 
-        <!-- CARD: HUMIDITY -->
-        <div class="telemetry-card clickable" onclick="openDetail('hum')">
-          <div class="card-header">
-            <span>RELATIVE HUMIDITY (DHT11)</span>
-            <span class="badge" id="badge-hum">OFFLINE</span>
-          </div>
-          <div class="card-metric" id="val-hum">0.0 <span class="unit">%</span></div>
-          <div class="card-stats">
-            <span>MIN: <b id="min-hum">0.0</b></span>
-            <span>MAX: <b id="max-hum">0.0</b></span>
-            <span>AVG: <b id="avg-hum">0.0</b></span>
-          </div>
-        </div>
+ <div class="card">
+  <small>DHT11 Temperature</small>
+  <div class="value" id="temperature">0.00 °C</div>
+  <small>Temperature</small>
+ </div>
 
-        <!-- CARD: PRESSURE -->
-        <div class="telemetry-card clickable" onclick="openDetail('pres')">
-          <div class="card-header">
-            <span>BAROMETRIC PRESSURE (BMP280)</span>
-            <span class="badge" id="badge-pres">OFFLINE</span>
-          </div>
-          <div class="card-metric" id="val-pres">0.00 <span class="unit">hPa</span></div>
-          <div class="card-stats">
-            <span>MIN: <b id="min-pres">0.0</b></span>
-            <span>MAX: <b id="max-pres">0.0</b></span>
-            <span>AVG: <b id="avg-pres">0.0</b></span>
-          </div>
-        </div>
+ <div class="card">
+  <small>Humidity</small>
+  <div class="value" id="humidity">0.00 %</div>
+  <small>Relative Humidity</small>
+ </div>
 
-        <!-- CARD: ATTITUDE -->
-        <div class="telemetry-card clickable" onclick="openDetail('attitude')">
-          <div class="card-header">
-            <span>ATTITUDE (MPU6050)</span>
-            <span class="badge" id="badge-mpu">OFFLINE</span>
-          </div>
-          <div class="card-multi-metric">
-            <div>ROLL: <b id="val-roll">0.00°</b></div>
-            <div>PITCH: <b id="val-pitch">0.00°</b></div>
-          </div>
-          <div class="card-subtext">ACCEL Z: <span id="val-accelZ">0.00</span> g</div>
-        </div>
+ <div class="card">
+  <small>BMP280 Temperature</small>
+  <div class="value" id="bmpTemperature">0.00 °C</div>
+  <small>Pressure Sensor Temperature</small>
+ </div>
 
-        <!-- CARD: GPS GEO -->
-        <div class="telemetry-card clickable" onclick="openDetail('gps')">
-          <div class="card-header">
-            <span>GPS POSITION (NEO-6M)</span>
-            <span class="badge" id="badge-gps">NO FIX</span>
-          </div>
-          <div class="card-multi-metric">
-            <div>LAT: <b id="val-lat">0.000000</b></div>
-            <div>LNG: <b id="val-lng">0.000000</b></div>
-          </div>
-          <div class="card-stats">
-            <span>ALT: <b id="val-alt">0.0 m</b></span>
-            <span>SATS: <b id="val-sats">0</b></span>
-          </div>
-        </div>
+ <div class="card">
+  <small>Atmospheric Pressure</small>
+  <div class="value" id="pressure">0.00 hPa</div>
+  <small>BMP280</small>
+ </div>
 
-        <!-- CARD: SOLAR BUS -->
-        <div class="telemetry-card">
-          <div class="card-header">
-            <span>POWER SYSTEM (SOLAR BUS)</span>
-            <span class="badge badge-online">MONITOR</span>
-          </div>
-          <div class="card-metric" id="val-solar">0.00 <span class="unit">V</span></div>
-          <div class="card-subtext">Estimated Battery Float Mode</div>
-        </div>
+ <div class="card">
+  <small>BMP280 Altitude</small>
+  <div class="value" id="bmpAltitude">0.00 m</div>
+  <small>Calculated altitude</small>
+ </div>
+</div>
+</section>
 
-      </div>
+<section class="section">
+<h2>MPU ACCELEROMETER</h2>
+<div class="sensor-grid">
+ <div class="axis">X <div class="value" id="ax">0.000</div><small>g</small></div>
+ <div class="axis">Y <div class="value" id="ay">0.000</div><small>g</small></div>
+ <div class="axis">Z <div class="value" id="az">0.000</div><small>g</small></div>
+ <div class="axis">Total Acceleration<div class="value" id="totalAcc">0.000</div><small>g</small></div>
+</div>
+</section>
 
-      <!-- MINI 3D AND OVERVIEW GRAPH -->
-      <div class="split-view">
-        <div class="panel-box">
-          <h3>REAL-TIME ATTITUDE ORIENTATION</h3>
-          <div id="cubesat-preview-canvas" class="canvas-3d"></div>
-        </div>
-        <div class="panel-box">
-          <div class="graph-header">
-            <h3>ATMOSPHERIC PROFILE</h3>
-            <div class="filter-group">
-              <button class="btn-filter" data-minutes="1">1M</button>
-              <button class="btn-filter" data-minutes="5">5M</button>
-              <button class="btn-filter active" data-minutes="15">15M</button>
-            </div>
-          </div>
-          <div class="canvas-container">
-            <canvas id="overviewChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </section>
+<section class="section">
+<h2>MPU GYROSCOPE</h2>
+<div class="sensor-grid">
+ <div class="axis">X <div class="value" id="gx">0.00</div><small>°/s</small></div>
+ <div class="axis">Y <div class="value" id="gy">0.00</div><small>°/s</small></div>
+ <div class="axis">Z <div class="value" id="gz">0.00</div><small>°/s</small></div>
+</div>
+</section>
 
-    <!-- TAB 2: DETAILED LIVE TELEMETRY GRAPHS -->
-    <section id="tab-telemetry" class="tab-pane">
-      <div class="graph-grid">
-        <div class="graph-card">
-          <h4>Temperature History (°C)</h4>
-          <div class="chart-wrapper"><canvas id="tempChart"></canvas></div>
-        </div>
-        <div class="graph-card">
-          <h4>Relative Humidity History (%)</h4>
-          <div class="chart-wrapper"><canvas id="humChart"></canvas></div>
-        </div>
-        <div class="graph-card">
-          <h4>Pressure History (hPa)</h4>
-          <div class="chart-wrapper"><canvas id="presChart"></canvas></div>
-        </div>
-        <div class="graph-card">
-          <h4>Accelerometer (X, Y, Z in g)</h4>
-          <div class="chart-wrapper"><canvas id="accelChart"></canvas></div>
-        </div>
-        <div class="graph-card">
-          <h4>Gyroscope (X, Y, Z in °/s)</h4>
-          <div class="chart-wrapper"><canvas id="gyroChart"></canvas></div>
-        </div>
-        <div class="graph-card">
-          <h4>Attitude Angles (Roll, Pitch in °)</h4>
-          <div class="chart-wrapper"><canvas id="attitudeChart"></canvas></div>
-        </div>
-      </div>
-    </section>
+<section class="section">
+<h2>ORIENTATION</h2>
+<div class="sensor-grid">
+ <div class="axis">ROLL<div class="value" id="roll">0.00°</div></div>
+ <div class="axis">PITCH<div class="value" id="pitch">0.00°</div></div>
+</div>
+</section>
 
-    <!-- TAB 3: FULL 3D INTERACTIVE CUBESAT -->
-    <section id="tab-attitude" class="tab-pane">
-      <div class="attitude-layout">
-        <div class="attitude-viewport" id="cubesat-full-canvas"></div>
-        <div class="attitude-telemetry-panel">
-          <h3>FLIGHT DYNAMICS (INERTIAL)</h3>
-          <div class="data-row"><span>Roll:</span> <b id="full-roll">0.00°</b></div>
-          <div class="data-row"><span>Pitch:</span> <b id="full-pitch">0.00°</b></div>
-          <div class="data-row"><span>Accel X:</span> <b id="full-ax">0.000 g</b></div>
-          <div class="data-row"><span>Accel Y:</span> <b id="full-ay">0.000 g</b></div>
-          <div class="data-row"><span>Accel Z:</span> <b id="full-az">0.000 g</b></div>
-          <div class="data-row"><span>Gyro X:</span> <b id="full-gx">0.00 °/s</b></div>
-          <div class="data-row"><span>Gyro Y:</span> <b id="full-gy">0.00 °/s</b></div>
-          <div class="data-row"><span>Gyro Z:</span> <b id="full-gz">0.00 °/s</b></div>
-          <p class="note">Yaw computation requires external magnetometer referencing to mitigate gyro integration drift. Attitude currently constrained to calibrated 2-axis accelerometer vector analysis.</p>
-          <button class="btn btn-secondary" onclick="reset3DCamera()">RESET CAMERA</button>
-        </div>
-      </div>
-    </section>
+<section class="section">
+<h2>GPS TELEMETRY</h2>
+<div class="grid">
+ <div class="card"><small>Latitude</small><div class="value" id="latitude">0.000000</div></div>
+ <div class="card"><small>Longitude</small><div class="value" id="longitude">0.000000</div></div>
+ <div class="card"><small>GPS Altitude</small><div class="value" id="altitude">0.00 m</div></div>
+ <div class="card"><small>Speed</small><div class="value" id="speed">0.00 km/h</div></div>
+ <div class="card"><small>Satellites</small><div class="value" id="satellites">0</div></div>
+ <div class="card"><small>GPS Fix</small><div class="value" id="gpsFix">NO FIX</div></div>
+</div>
+</section>
 
-    <!-- TAB 4: GPS & ORBIT TRACKER -->
-    <section id="tab-gps" class="tab-pane">
-      <div class="gps-layout">
-        <div class="panel-box">
-          <h3>COORDINATES & NAVIGATION FIX</h3>
-          <div class="gps-readout-grid">
-            <div class="gps-readout-item"><span>Latitude</span><b id="gps-lat">0.000000°</b></div>
-            <div class="gps-readout-item"><span>Longitude</span><b id="gps-lng">0.000000°</b></div>
-            <div class="gps-readout-item"><span>Altitude</span><b id="gps-alt">0.0 m</b></div>
-            <div class="gps-readout-item"><span>Ground Speed</span><b id="gps-speed">0.00 km/h</b></div>
-            <div class="gps-readout-item"><span>Satellites In View</span><b id="gps-sats">0</b></div>
-            <div class="gps-readout-item"><span>Receiver State</span><b id="gps-fix-state">NO FIX</b></div>
-          </div>
-        </div>
-      </div>
-    </section>
+<section class="section">
+<h2>SENSOR HEALTH</h2>
+<div class="grid">
+ <div class="card"><small>MPU STATUS</small><div class="value" id="mpuStatus">WAITING</div><small id="mpuDetails">Not connected</small></div>
+ <div class="card"><small>GPS STATUS</small><div class="value" id="gpsStatus">WAITING</div></div>
+ <div class="card"><small>LAST PACKET</small><div class="value" id="lastPacket" style="font-size:17px">--</div></div>
+ <div class="card"><small>LAST UPDATE</small><div class="value" id="lastUpdate" style="font-size:17px">--</div></div>
+</div>
+<p class="note">Sensor health is determined from received telemetry and firmware status. A serial connection alone does not mean every sensor is working.</p>
+</section>
 
-    <!-- TAB 5: SYSTEM HEALTH -->
-    <section id="tab-health" class="tab-pane">
-      <div class="health-table-box">
-        <h3>SUBSYSTEM TELEMETRY HEALTH DIAGNOSTICS</h3>
-        <table class="health-table">
-          <thead>
-            <tr>
-              <th>Subsystem</th>
-              <th>Hardware Component</th>
-              <th>Expected Interface</th>
-              <th>Status</th>
-              <th>Telemetry Integrity</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Ground Station Link</td>
-              <td>CP210x / CH340 USB CDC</td>
-              <td>Web Serial (115200 bps)</td>
-              <td id="health-serial">DISCONNECTED</td>
-              <td id="health-serial-desc">Awaiting port allocation</td>
-            </tr>
-            <tr>
-              <td>Downlink RF</td>
-              <td>ESP-NOW Protocol</td>
-              <td>2.4 GHz Proprietary</td>
-              <td id="health-rf">OFFLINE</td>
-              <td id="health-rf-desc">Awaiting valid packet ingress</td>
-            </tr>
-            <tr>
-              <td>Atmospheric Package</td>
-              <td>Bosch BMP280</td>
-              <td>I2C: 0x76 / 0x77</td>
-              <td id="health-bmp">OFFLINE</td>
-              <td id="health-bmp-desc">No reading</td>
-            </tr>
-            <tr>
-              <td>Humidity Package</td>
-              <td>Aosong DHT11</td>
-              <td>Single-Bus (GPIO 4)</td>
-              <td id="health-dht">OFFLINE</td>
-              <td id="health-dht-desc">No reading</td>
-            </tr>
-            <tr>
-              <td>IMU Package</td>
-              <td>InvenSense MPU6050</td>
-              <td>I2C: 0x68</td>
-              <td id="health-mpu">OFFLINE</td>
-              <td id="health-mpu-desc">No reading</td>
-            </tr>
-            <tr>
-              <td>GNSS Positioning</td>
-              <td>u-blox NEO-6M</td>
-              <td>HardwareSerial2 (9600 bps)</td>
-              <td id="health-gps">NO FIX</td>
-              <td id="health-gps-desc">No valid ephemeris lock</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+<section class="section">
+<h2>LIVE CUBESAT MOVEMENT</h2>
+<div class="panel">
+ <div id="cube"></div>
+ <p class="note">3D orientation follows actual Roll and Pitch values when valid MPU data is received. Drag to rotate the view.</p>
+</div>
+</section>
 
-    <!-- DEDICATED SENSOR MODAL / DRILLDOWN -->
-    <div id="sensorDetailModal" class="modal hidden">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2 id="modalTitle">SENSOR DRILLDOWN</h2>
-          <button class="btn-close" onclick="closeDetail()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="modal-metric" id="modalMetric">--</div>
-          <div class="modal-stats" id="modalStats"></div>
-          <div class="modal-chart-container">
-            <canvas id="modalChart"></canvas>
-          </div>
-        </div>
-      </div>
-    </div>
+<section class="section">
+<h2>LIVE SENSOR GRAPHS – LAST 15 MINUTES</h2>
+<div class="two">
+ <div class="panel"><h2>Temperature</h2><canvas id="tempChart"></canvas></div>
+ <div class="panel"><h2>Humidity</h2><canvas id="humidityChart"></canvas></div>
+ <div class="panel"><h2>Pressure</h2><canvas id="pressureChart"></canvas></div>
+ <div class="panel"><h2>Accelerometer XYZ</h2><canvas id="accChart"></canvas></div>
+ <div class="panel"><h2>Gyroscope XYZ</h2><canvas id="gyroChart"></canvas></div>
+</div>
+</section>
 
-  </main>
+<div class="footer">
+ ASTRA ORBIT 2.0 | Real ESP32 Telemetry | Mission Control
+</div>
 
-  <!-- MISSION CONTROL FOOTER -->
-  <footer class="mission-footer">
-    <span>ASTRA ORBIT 2.0 | REAL SENSOR TELEMETRY PIPELINE</span>
-    <span>STATUS: <span id="footerConnection">IDLE</span></span>
-    <span>MISSION TIME: <span id="missionClock">00:00:00 UTC</span></span>
-  </footer>
+<script>
+"use strict";
 
-  <!-- EMBEDDED JAVASCRIPT PIPELINE -->
-  <script>
-    /* ==========================================================================
-       1. GLOBAL STATE & TELEMETRY DEFINITION
-       Zero random data. All values remain 0 until genuine packets arrive.
-       ========================================================================== */
-    const initialTelemetry = {
-      temperature: 0.0,
-      humidity: 0.0,
-      pressure: 0.0,
-      accelX: 0.0,
-      accelY: 0.0,
-      accelZ: 0.0,
-      gyroX: 0.0,
-      gyroY: 0.0,
-      gyroZ: 0.0,
-      roll: 0.0,
-      pitch: 0.0,
-      latitude: 0.0,
-      longitude: 0.0,
-      altitude: 0.0,
-      speed: 0.0,
-      satellites: 0,
-      vSolar: 0.0,
-      packetCount: 0
-    };
+// Initial display values only. These are NOT sensor measurements.
+const initial = {
+ temperature:0, humidity:0, bmpTemperature:0,
+ pressure:0, bmpAltitude:0,
+ ax:0, ay:0, az:0, totalAcc:0,
+ gx:0, gy:0, gz:0, roll:0, pitch:0,
+ latitude:0, longitude:0, altitude:0, speed:0,
+ satellites:0, gpsFix:0, packetNo:0,
+ rssi:0, mpuReady:0, mpuAddress:0, mpuWhoAmI:0
+};
 
-    window.AstraState = {
-      isConnected: false,
-      isTelemetryLive: false,
-      lastPacketTimestamp: null,
-      packetCount: 0,
-      current: { ...initialTelemetry },
-      history: [],
-      stats: {
-        temp: { min: Infinity, max: -Infinity, sum: 0, count: 0 },
-        hum:  { min: Infinity, max: -Infinity, sum: 0, count: 0 },
-        pres: { min: Infinity, max: -Infinity, sum: 0, count: 0 }
-      }
-    };
+let telemetry = {...initial};
+let port = null;
+let reader = null;
+let keepReading = false;
+let connected = false;
+let lastPacketKey = null;
+let lastPacketTime = 0;
+let lastPacketNo = null;
+let textBuffer = "";
+let cube = null;
+let cubeReady = false;
 
-    function updateStat(metric, val) {
-      const s = window.AstraState.stats[metric];
-      if (val < s.min) s.min = val;
-      if (val > s.max) s.max = val;
-      s.sum += val;
-      s.count++;
+const $ = id => document.getElementById(id);
+
+function setStatus(connection, live) {
+ $("connectionStatus").textContent = connection ? "CONNECTED" : "DISCONNECTED";
+ $("connectionDot").className = connection ? "dot online" : "dot";
+ $("telemetryStatus").textContent = live ? "LIVE" : (connection ? "WAITING FOR DATA" : "WAITING");
+ $("connectBtn").disabled = connection;
+ $("disconnectBtn").disabled = !connection;
+}
+
+function show(id, value) {
+ $(id).textContent = value;
+}
+
+function displayInitial() {
+ show("temperature","0.00 °C");
+ show("humidity","0.00 %");
+ show("bmpTemperature","0.00 °C");
+ show("pressure","0.00 hPa");
+ show("bmpAltitude","0.00 m");
+ ["ax","ay","az","totalAcc","gx","gy","gz"].forEach(id=>show(id,id.startsWith("g") && id!=="gpsFix" ? "0.00" : "0.000"));
+ show("roll","0.00°");
+ show("pitch","0.00°");
+ show("latitude","0.000000");
+ show("longitude","0.000000");
+ show("altitude","0.00 m");
+ show("speed","0.00 km/h");
+ show("satellites","0");
+ show("gpsFix","NO FIX");
+ show("packetCount","0");
+ show("rssi","0");
+ show("mpuStatus","WAITING");
+ show("mpuDetails","Not connected");
+ show("gpsStatus","WAITING");
+ show("lastPacket","--");
+ show("lastUpdate","--");
+}
+
+const chartOptions = {
+ responsive:true,
+ animation:false,
+ maintainAspectRatio:true,
+ scales:{
+  x:{ticks:{color:"#91a9c2",maxTicksLimit:6},grid:{color:"#263b53"}},
+  y:{ticks:{color:"#91a9c2"},grid:{color:"#263b53"}}
+ },
+ plugins:{legend:{labels:{color:"#dceeff"}}}
+};
+
+function makeChart(id, datasets) {
+ return new Chart($(id),{
+  type:"line",
+  data:{labels:[],datasets:datasets.map((d,i)=>({
+   label:d,
+   data:[],
+   borderColor:["#45c8ff","#43d9a3","#ffbb55"][i%3],
+   backgroundColor:"transparent",
+   borderWidth:2,
+   pointRadius:0,
+   tension:.15
+  }))},
+  options:chartOptions
+ });
+}
+
+const tempChart=makeChart("tempChart",["DHT11 Temperature °C"]);
+const humidityChart=makeChart("humidityChart",["Humidity %"]);
+const pressureChart=makeChart("pressureChart",["Pressure hPa"]);
+const accChart=makeChart("accChart",["X g","Y g","Z g"]);
+const gyroChart=makeChart("gyroChart",["X °/s","Y °/s","Z °/s"]);
+
+function addPoint(chart, time, values) {
+ chart.data.labels.push(time);
+ values.forEach((v,i)=>{
+  chart.data.datasets[i].data.push(v);
+ });
+ // Keep only the last 15 minutes of available readings.
+ while(chart.data.labels.length > 900) {
+  chart.data.labels.shift();
+  chart.data.datasets.forEach(d=>d.data.shift());
+ }
+ chart.update("none");
+}
+
+function validNumber(value) {
+ return typeof value === "number" && Number.isFinite(value);
+}
+
+function updateTelemetry(d) {
+ const now=Date.now();
+ const time=new Date(now).toLocaleTimeString();
+
+ // Only update fields actually present and valid in the received packet.
+ const numericFields=[
+  "temperature","humidity","bmpTemperature","pressure","bmpAltitude",
+  "ax","ay","az","totalAcc","gx","gy","gz","roll","pitch",
+  "latitude","longitude","altitude","speed","satellites",
+  "packetNo","rssi","mpuReady","mpuAddress","mpuWhoAmI","gpsFix"
+ ];
+
+ let accepted=false;
+ numericFields.forEach(key=>{
+  if(Object.prototype.hasOwnProperty.call(d,key) && validNumber(d[key])) {
+   telemetry[key]=d[key];
+   accepted=true;
+  }
+ });
+
+ if(!accepted) return;
+
+ // A packet is considered telemetry only if it has a recognized sensor field.
+ const hasSensorField=[
+  "temperature","humidity","bmpTemperature","pressure",
+  "ax","ay","az","gx","gy","gz","latitude","longitude"
+ ].some(k=>Object.prototype.hasOwnProperty.call(d,k) && validNumber(d[k]));
+
+ if(!hasSensorField) return;
+
+ lastPacketTime=now;
+ show("packetCount",String(telemetry.packetNo));
+ show("lastPacket",String(telemetry.packetNo));
+ show("lastUpdate",time);
+ show("rssi",String(telemetry.rssi));
+
+ show("temperature",telemetry.temperature.toFixed(2)+" °C");
+ show("humidity",telemetry.humidity.toFixed(2)+" %");
+ show("bmpTemperature",telemetry.bmpTemperature.toFixed(2)+" °C");
+ show("pressure",telemetry.pressure.toFixed(2)+" hPa");
+ show("bmpAltitude",telemetry.bmpAltitude.toFixed(2)+" m");
+
+ ["ax","ay","az","totalAcc"].forEach(k=>show(k,telemetry[k].toFixed(3)));
+ ["gx","gy","gz"].forEach(k=>show(k,telemetry[k].toFixed(2)));
+
+ show("roll",telemetry.roll.toFixed(2)+"°");
+ show("pitch",telemetry.pitch.toFixed(2)+"°");
+
+ show("latitude",telemetry.latitude.toFixed(6));
+ show("longitude",telemetry.longitude.toFixed(6));
+ show("altitude",telemetry.altitude.toFixed(2)+" m");
+ show("speed",telemetry.speed.toFixed(2)+" km/h");
+ show("satellites",String(telemetry.satellites));
+ show("gpsFix",telemetry.gpsFix===1?"GPS FIX":"NO FIX");
+ show("gpsStatus",telemetry.gpsFix===1?"ONLINE":"NO FIX");
+
+ show("mpuStatus",telemetry.mpuReady===1?"ONLINE":"OFFLINE");
+ show("mpuDetails","Address: 0x"+telemetry.mpuAddress.toString(16)+" | WHO_AM_I: 0x"+telemetry.mpuWhoAmI.toString(16));
+
+ // Add graph points only for received packets.
+ addPoint(tempChart,time,[telemetry.temperature]);
+ addPoint(humidityChart,time,[telemetry.humidity]);
+ addPoint(pressureChart,time,[telemetry.pressure]);
+ addPoint(accChart,time,[telemetry.ax,telemetry.ay,telemetry.az]);
+ addPoint(gyroChart,time,[telemetry.gx,telemetry.gy,telemetry.gz]);
+
+ updateCubeOrientation();
+ $("telemetryStatus").textContent="LIVE";
+}
+
+async function connectESP32() {
+ if(!("serial" in navigator)) {
+  alert("Web Serial API is not supported. Use desktop Chrome or Edge over HTTPS or localhost.");
+  return;
+ }
+
+ try {
+  port=await navigator.serial.requestPort();
+  await port.open({baudRate:115200});
+  connected=true;
+  keepReading=true;
+  setStatus(true,false);
+  textBuffer="";
+
+  const decoder=new TextDecoderStream();
+  const closed=port.readable.pipeTo(decoder.writable).catch(()=>{});
+  reader=decoder.readable.getReader();
+
+  readSerial();
+ } catch(err) {
+  connected=false;
+  keepReading=false;
+  setStatus(false,false);
+  alert("Serial connection failed: "+err.message);
+ }
+}
+
+async function readSerial() {
+ try {
+  while(keepReading && reader) {
+   const {value,done}=await reader.read();
+   if(done) break;
+   if(!value) continue;
+
+   textBuffer+=value;
+   let lines=textBuffer.split(/\r?\n/);
+   textBuffer=lines.pop() || "";
+
+   // Prevent unbounded memory use from malformed serial data.
+   if(textBuffer.length>10000) textBuffer="";
+
+   for(const line of lines) {
+    const trimmed=line.trim();
+    if(!trimmed) continue;
+
+    try {
+     const parsed=JSON.parse(trimmed);
+     if(parsed && typeof parsed==="object" && !Array.isArray(parsed) && !parsed.error) {
+      updateTelemetry(parsed);
+     }
+    } catch(e) {
+     // Ignore malformed or non-JSON serial lines.
     }
+   }
+  }
+ } catch(err) {
+  if(keepReading) console.warn("Serial read stopped:",err.message);
+ } finally {
+  if(keepReading) await disconnectESP32();
+ }
+}
+
+async function disconnectESP32() {
+ keepReading=false;
+ connected=false;
+
+ try {
+  if(reader) {
+   await reader.cancel();
+   reader.releaseLock();
+  }
+ } catch(e) {}
+
+ reader=null;
+
+ try {
+  if(port && port.readable) await port.close();
+ } catch(e) {}
+
+ port=null;
+ textBuffer="";
+ setStatus(false,false);
+}
+
+// 3D CubeSat: default position remains stationary.
+function initCube() {
+ const container=$("cube");
+ if(!window.THREE) {
+  container.textContent="3D library could not load.";
+  return;
+ }
+
+ const scene=new THREE.Scene();
+ scene.background=new THREE.Color(0x102139);
+
+ const camera=new THREE.PerspectiveCamera(
+  45,container.clientWidth/300,0.1,100
+ );
+ camera.position.set(3,2.5,4);
+
+ const renderer=new THREE.WebGLRenderer({antialias:true});
+ renderer.setSize(container.clientWidth,300);
+ container.appendChild(renderer.domElement);
+
+ scene.add(new THREE.AmbientLight(0xffffff,1.3));
+
+ const light=new THREE.DirectionalLight(0xffffff,2);
+ light.position.set(3,5,4);
+ scene.add(light);
+
+ const body=new THREE.Mesh(
+  new THREE.BoxGeometry(1.25,1.25,1.25),
+  new THREE.MeshStandardMaterial({color:0xb5a078,metalness:.55,roughness:.4})
+ );
+ scene.add(body);
+
+ const panelMat=new THREE.MeshStandardMaterial({
+  color:0x1558a8,metalness:.4,roughness:.4
+ });
+
+ const left=new THREE.Mesh(new THREE.BoxGeometry(.85,.025,1.2),panelMat);
+ left.position.x=-1.03;
+ scene.add(left);
+
+ const right=new THREE.Mesh(new THREE.BoxGeometry(.85,.025,1.2),panelMat);
+ right.position.x=1.03;
+ scene.add(right);
+
+ const antenna=new THREE.Mesh(
+  new THREE.CylinderGeometry(.025,.025,.9,12),
+  new THREE.MeshStandardMaterial({color:0xd8b45d})
+ );
+ antenna.position.set(0,.95,0);
+ scene.add(antenna);
+
+ cube={scene,camera,renderer,body};
+ cubeReady=true;
+
+ function render() {
+  requestAnimationFrame(render);
+  renderer.render(scene,camera);
+ }
+ render();
+
+ const observer=new ResizeObserver(()=>{
+  if(!cubeReady)return;
+  const w=container.clientWidth;
+  camera.aspect=w/300;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w,300);
+ });
+ observer.observe(container);
+}
+
+function updateCubeOrientation() {
+ if(!cubeReady || telemetry.mpuReady!==1) return;
 
-    function processIncomingTelemetry(packet) {
-      if (!packet || typeof packet.packet !== "number") {
-        return;
-      }
+ // MPU firmware supplies Roll and Pitch in degrees.
+ cube.body.rotation.z=telemetry.roll*Math.PI/180;
+ cube.body.rotation.x=telemetry.pitch*Math.PI/180;
+}
 
-      const now = Date.now();
-      const state = window.AstraState;
+displayInitial();
+setStatus(false,false);
 
-      state.isTelemetryLive = true;
-      state.lastPacketTimestamp = now;
-      state.packetCount = packet.packet;
+if(window.THREE) initCube();
+else $("cube").textContent="Loading 3D model...";
 
-      state.current = {
-        temperature: typeof packet.temp === "number" ? packet.temp : 0.0,
-        humidity: typeof packet.hum === "number" ? packet.hum : 0.0,
-        pressure: typeof packet.pres === "number" ? packet.pres : 0.0,
-        accelX: typeof packet.accelX === "number" ? packet.accelX : 0.0,
-        accelY: typeof packet.accelY === "number" ? packet.accelY : 0.0,
-        accelZ: typeof packet.accelZ === "number" ? packet.accelZ : 0.0,
-        gyroX: typeof packet.gyroX === "number" ? packet.gyroX : 0.0,
-        gyroY: typeof packet.gyroY === "number" ? packet.gyroY : 0.0,
-        gyroZ: typeof packet.gyroZ === "number" ? packet.gyroZ : 0.0,
-        roll: typeof packet.roll === "number" ? packet.roll : 0.0,
-        pitch: typeof packet.pitch === "number" ? packet.pitch : 0.0,
-        latitude: typeof packet.lat === "number" ? packet.lat : 0.0,
-        longitude: typeof packet.lng === "number" ? packet.lng : 0.0,
-        altitude: typeof packet.alt === "number" ? packet.alt : 0.0,
-        speed: typeof packet.speed === "number" ? packet.speed : 0.0,
-        satellites: typeof packet.sats === "number" ? packet.sats : 0,
-        vSolar: typeof packet.vSolar === "number" ? packet.vSolar : 0.0,
-        packetCount: packet.packet,
-        sensorStatus: packet.status || { bmp: 0, dht: 0, mpu: 0, gps: 0 },
-        gpsFix: !!packet.gpsFix
-      };
+// No telemetry timers or random data generators are used.
+// The dashboard changes only when actual serial JSON packets arrive.
+</script>
 
-      if (state.current.sensorStatus.bmp || state.current.sensorStatus.dht) {
-        updateStat('temp', state.current.temperature);
-      }
-      if (state.current.sensorStatus.dht) {
-        updateStat('hum', state.current.humidity);
-      }
-      if (state.current.sensorStatus.bmp) {
-        updateStat('pres', state.current.pressure);
-      }
-
-      state.history.push({
-        timestamp: now,
-        data: { ...state.current }
-      });
-
-      const fifteenMinutesAgo = now - 15 * 60 * 1000;
-      while (state.history.length > 0 && state.history[0].timestamp < fifteenMinutesAgo) {
-        state.history.shift();
-      }
-
-      renderDashboardUI();
-      pushChartDataPoint(now, state.current);
-      update3DAttitude(state.current.roll, state.current.pitch);
-    }
-
-    /* ==========================================================================
-       2. WEB SERIAL API SUBSYSTEM
-       Strict line-buffered asynchronous stream decoding at 115200 baud.
-       ========================================================================== */
-    let serialPort = null;
-    let serialReader = null;
-    let keepReading = false;
-    let inputBuffer = "";
-
-    const btnConnect = document.getElementById("btnConnect");
-    const btnDisconnect = document.getElementById("btnDisconnect");
-    const espStatus = document.getElementById("espStatus");
-    const telemStatus = document.getElementById("telemStatus");
-
-    btnConnect.addEventListener("click", connectSerial);
-    btnDisconnect.addEventListener("click", disconnectSerial);
-
-    async function connectSerial() {
-      if (!("serial" in navigator)) {
-        alert("Web Serial API is not supported in this browser. Please use desktop Google Chrome or Microsoft Edge.");
-        return;
-      }
-
-      try {
-        serialPort = await navigator.serial.requestPort();
-        await serialPort.open({ baudRate: 115200 });
-
-        keepReading = true;
-        window.AstraState.isConnected = true;
-
-        espStatus.textContent = "ESP32: CONNECTED";
-        espStatus.className = "status-badge connected";
-        telemStatus.textContent = "TELEMETRY: WAITING FOR DATA";
-
-        btnConnect.classList.add("hidden");
-        btnDisconnect.classList.remove("hidden");
-        
-        document.getElementById("health-serial").textContent = "CONNECTED";
-        document.getElementById("health-serial").className = "badge-online";
-        document.getElementById("health-serial-desc").textContent = "Port Open @ 115200 Baud";
-
-        readSerialLoop();
-      } catch (err) {
-        console.error("Serial Connection Error:", err);
-        disconnectSerial();
-      }
-    }
-
-    async function readSerialLoop() {
-      const textDecoder = new TextDecoderStream();
-      const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
-      serialReader = textDecoder.readable.getReader();
-
-      try {
-        while (keepReading) {
-          const { value, done } = await serialReader.read();
-          if (done) break;
-          if (value) {
-            inputBuffer += value;
-            const lines = inputBuffer.split("\n");
-            inputBuffer = lines.pop();
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-                try {
-                  const parsed = JSON.parse(trimmed);
-                  processIncomingTelemetry(parsed);
-                } catch (jsonErr) {
-                  // Ignore corrupted frames
-                }
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Stream Read Error:", err);
-      } finally {
-        if (serialReader) {
-          try { serialReader.releaseLock(); } catch(e) {}
-        }
-      }
-    }
-
-    async function disconnectSerial() {
-      keepReading = false;
-      window.AstraState.isConnected = false;
-      window.AstraState.isTelemetryLive = false;
-
-      if (serialReader) {
-        try { await serialReader.cancel(); } catch (e) {}
-      }
-
-      if (serialPort) {
-        try { await serialPort.close(); } catch (e) {}
-        serialPort = null;
-      }
-
-      espStatus.textContent = "ESP32: DISCONNECTED";
-      espStatus.className = "status-badge";
-      telemStatus.textContent = "TELEMETRY: STOPPED";
-      telemStatus.className = "status-badge";
-
-      btnConnect.classList.remove("hidden");
-      btnDisconnect.classList.add("hidden");
-
-      document.getElementById("health-serial").textContent = "DISCONNECTED";
-      document.getElementById("health-serial").className = "badge-error";
-      document.getElementById("health-serial-desc").textContent = "Port Closed";
-    }
-
-    /* ==========================================================================
-       3. CHART.JS HISTORICAL TELEMETRY ENGINE
-       Strict real data points only. No simulated ticks.
-       ========================================================================== */
-    let currentTimeWindowMinutes = 15;
-    const chartInstances = {};
-
-    const chartOptionsBase = {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      scales: {
-        x: {
-          type: 'linear',
-          grid: { color: '#141f3d' },
-          ticks: {
-            color: '#798bb4',
-            font: { family: 'SF Mono' },
-            callback: (value) => {
-              const d = new Date(value);
-              return `${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
-            }
-          }
-        },
-        y: {
-          grid: { color: '#141f3d' },
-          ticks: { color: '#798bb4', font: { family: 'SF Mono' } }
-        }
-      },
-      plugins: {
-        legend: { labels: { color: '#f0f4fc', font: { family: 'SF Mono', size: 10 } } }
-      }
-    };
-
-    function initCharts() {
-      // Atmospheric Overview
-      chartInstances.overview = new Chart(document.getElementById("overviewChart"), {
-        type: 'line',
-        data: {
-          datasets: [
-            { label: 'Temp (°C)', borderColor: '#00e5ff', data: [], borderWidth: 2, pointRadius: 0 },
-            { label: 'Humidity (%)', borderColor: '#00e676', data: [], borderWidth: 2, pointRadius: 0 }
-          ]
-        },
-        options: chartOptionsBase
-      });
-
-      // Individual Telemetry Charts
-      chartInstances.temp = new Chart(document.getElementById("tempChart"), {
-        type: 'line',
-        data: { datasets: [{ label: 'Temperature (°C)', borderColor: '#00e5ff', data: [], borderWidth: 2, pointRadius: 0 }] },
-        options: chartOptionsBase
-      });
-
-      chartInstances.hum = new Chart(document.getElementById("humChart"), {
-        type: 'line',
-        data: { datasets: [{ label: 'Humidity (%)', borderColor: '#00e676', data: [], borderWidth: 2, pointRadius: 0 }] },
-        options: chartOptionsBase
-      });
-
-      chartInstances.pres = new Chart(document.getElementById("presChart"), {
-        type: 'line',
-        data: { datasets: [{ label: 'Pressure (hPa)', borderColor: '#ffea00', data: [], borderWidth: 2, pointRadius: 0 }] },
-        options: chartOptionsBase
-      });
-
-      chartInstances.accel = new Chart(document.getElementById("accelChart"), {
-        type: 'line',
-        data: {
-          datasets: [
-            { label: 'Accel X', borderColor: '#ff1744', data: [], borderWidth: 1.5, pointRadius: 0 },
-            { label: 'Accel Y', borderColor: '#00e676', data: [], borderWidth: 1.5, pointRadius: 0 },
-            { label: 'Accel Z', borderColor: '#00e5ff', data: [], borderWidth: 1.5, pointRadius: 0 }
-          ]
-        },
-        options: chartOptionsBase
-      });
-
-      chartInstances.gyro = new Chart(document.getElementById("gyroChart"), {
-        type: 'line',
-        data: {
-          datasets: [
-            { label: 'Gyro X', borderColor: '#ff1744', data: [], borderWidth: 1.5, pointRadius: 0 },
-            { label: 'Gyro Y', borderColor: '#00e676', data: [], borderWidth: 1.5, pointRadius: 0 },
-            { label: 'Gyro Z', borderColor: '#00e5ff', data: [], borderWidth: 1.5, pointRadius: 0 }
-          ]
-        },
-        options: chartOptionsBase
-      });
-
-      chartInstances.attitude = new Chart(document.getElementById("attitudeChart"), {
-        type: 'line',
-        data: {
-          datasets: [
-            { label: 'Roll (°)', borderColor: '#00e5ff', data: [], borderWidth: 2, pointRadius: 0 },
-            { label: 'Pitch (°)', borderColor: '#ffea00', data: [], borderWidth: 2, pointRadius: 0 }
-          ]
-        },
-        options: chartOptionsBase
-      });
-    }
-
-    function pushChartDataPoint(timestamp, d) {
-      chartInstances.overview.data.datasets[0].data.push({ x: timestamp, y: d.temperature });
-      chartInstances.overview.data.datasets[1].data.push({ x: timestamp, y: d.humidity });
-
-      chartInstances.temp.data.datasets[0].data.push({ x: timestamp, y: d.temperature });
-      chartInstances.hum.data.datasets[0].data.push({ x: timestamp, y: d.humidity });
-      chartInstances.pres.data.datasets[0].data.push({ x: timestamp, y: d.pressure });
-
-      chartInstances.accel.data.datasets[0].data.push({ x: timestamp, y: d.accelX });
-      chartInstances.accel.data.datasets[1].data.push({ x: timestamp, y: d.accelY });
-      chartInstances.accel.data.datasets[2].data.push({ x: timestamp, y: d.accelZ });
-
-      chartInstances.gyro.data.datasets[0].data.push({ x: timestamp, y: d.gyroX });
-      chartInstances.gyro.data.datasets[1].data.push({ x: timestamp, y: d.gyroY });
-      chartInstances.gyro.data.datasets[2].data.push({ x: timestamp, y: d.gyroZ });
-
-      chartInstances.attitude.data.datasets[0].data.push({ x: timestamp, y: d.roll });
-      chartInstances.attitude.data.datasets[1].data.push({ x: timestamp, y: d.pitch });
-
-      pruneAndRenderCharts(timestamp);
-    }
-
-    document.querySelectorAll(".btn-filter").forEach(btn => {
-      btn.addEventListener("click", (e) => {
-        document.querySelectorAll(".btn-filter").forEach(b => b.classList.remove("active"));
-        e.target.classList.add("active");
-        currentTimeWindowMinutes = parseInt(e.target.dataset.minutes, 10);
-        if (window.AstraState.lastPacketTimestamp) {
-          pruneAndRenderCharts(window.AstraState.lastPacketTimestamp);
-        }
-      });
-    });
-
-    function pruneAndRenderCharts(now) {
-      const minTime = now - currentTimeWindowMinutes * 60 * 1000;
-
-      Object.values(chartInstances).forEach(chart => {
-        chart.options.scales.x.min = minTime;
-        chart.options.scales.x.max = now;
-        chart.data.datasets.forEach(ds => {
-          while (ds.data.length > 0 && ds.data[0].x < minTime - 60000) {
-            ds.data.shift();
-          }
-        });
-        chart.update('none');
-      });
-    }
-
-    /* ==========================================================================
-       4. THREE.JS 3D CUBESAT ORIENTATION SYSTEM
-       Remains completely stationary until verified hardware IMU telemetry arrives.
-       ========================================================================== */
-    let scenePreview, cameraPreview, rendererPreview, cubesatPreview;
-    let sceneFull, cameraFull, rendererFull, cubesatFull;
-
-    function buildCubeSatMesh() {
-      const cubesatGroup = new THREE.Group();
-
-      // 1U Main Aluminum Chassis
-      const bodyGeo = new THREE.BoxGeometry(2, 2, 2);
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x1f293d,
-        metalness: 0.85,
-        roughness: 0.25
-      });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      cubesatGroup.add(body);
-
-      // Chassis Rails / Edge Highlights
-      const edges = new THREE.EdgesGeometry(bodyGeo);
-      const lineMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2 });
-      const wireframe = new THREE.LineSegments(edges, lineMat);
-      cubesatGroup.add(wireframe);
-
-      // Deployable Solar Arrays
-      const panelGeo = new THREE.BoxGeometry(1.8, 0.05, 1.8);
-      const panelMat = new THREE.MeshStandardMaterial({
-        color: 0x0a1c3d,
-        roughness: 0.1,
-        metalness: 0.9
-      });
-
-      const leftWing = new THREE.Mesh(panelGeo, panelMat);
-      leftWing.position.set(-2, 0, 0);
-      cubesatGroup.add(leftWing);
-
-      const rightWing = new THREE.Mesh(panelGeo, panelMat);
-      rightWing.position.set(2, 0, 0);
-      cubesatGroup.add(rightWing);
-
-      // Monopole Antenna
-      const antennaGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.5);
-      const antennaMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
-      const antenna = new THREE.Mesh(antennaGeo, antennaMat);
-      antenna.position.set(0, 1.75, 0);
-      cubesatGroup.add(antenna);
-
-      return cubesatGroup;
-    }
-
-    function init3D() {
-      // 1. Overview Miniature Viewport
-      const previewContainer = document.getElementById("cubesat-preview-canvas");
-      if (previewContainer) {
-        scenePreview = new THREE.Scene();
-        cameraPreview = new THREE.PerspectiveCamera(45, previewContainer.clientWidth / previewContainer.clientHeight, 0.1, 100);
-        cameraPreview.position.set(3, 3, 5);
-        cameraPreview.lookAt(0, 0, 0);
-
-        rendererPreview = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        rendererPreview.setSize(previewContainer.clientWidth, previewContainer.clientHeight);
-        previewContainer.appendChild(rendererPreview.domElement);
-
-        const light1 = new THREE.DirectionalLight(0xffffff, 1.5);
-        light1.position.set(5, 10, 7);
-        scenePreview.add(light1);
-        scenePreview.add(new THREE.AmbientLight(0x404040, 1.2));
-
-        cubesatPreview = buildCubeSatMesh();
-        scenePreview.add(cubesatPreview);
-        rendererPreview.render(scenePreview, cameraPreview);
-      }
-
-      // 2. Full Attitude Viewport
-      const fullContainer = document.getElementById("cubesat-full-canvas");
-      if (fullContainer) {
-        sceneFull = new THREE.Scene();
-        cameraFull = new THREE.PerspectiveCamera(45, fullContainer.clientWidth / fullContainer.clientHeight, 0.1, 100);
-        cameraFull.position.set(4, 4, 6);
-        cameraFull.lookAt(0, 0, 0);
-
-        rendererFull = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        rendererFull.setSize(fullContainer.clientWidth, fullContainer.clientHeight);
-        fullContainer.appendChild(rendererFull.domElement);
-
-        const light2 = new THREE.DirectionalLight(0xffffff, 2.0);
-        light2.position.set(5, 10, 7);
-        sceneFull.add(light2);
-        sceneFull.add(new THREE.AmbientLight(0x404040, 1.5));
-
-        cubesatFull = buildCubeSatMesh();
-        sceneFull.add(cubesatFull);
-        rendererFull.render(sceneFull, cameraFull);
-      }
-
-      window.addEventListener("resize", onWindowResize);
-    }
-
-    function onWindowResize() {
-      const pCont = document.getElementById("cubesat-preview-canvas");
-      if (pCont && rendererPreview && pCont.clientWidth > 0 && pCont.clientHeight > 0) {
-        cameraPreview.aspect = pCont.clientWidth / pCont.clientHeight;
-        cameraPreview.updateProjectionMatrix();
-        rendererPreview.setSize(pCont.clientWidth, pCont.clientHeight);
-        rendererPreview.render(scenePreview, cameraPreview);
-      }
-
-      const fCont = document.getElementById("cubesat-full-canvas");
-      if (fCont && rendererFull && fCont.clientWidth > 0 && fCont.clientHeight > 0) {
-        cameraFull.aspect = fCont.clientWidth / fCont.clientHeight;
-        cameraFull.updateProjectionMatrix();
-        rendererFull.setSize(fCont.clientWidth, fCont.clientHeight);
-        rendererFull.render(sceneFull, cameraFull);
-      }
-    }
-
-    function update3DAttitude(rollDeg, pitchDeg) {
-      const rollRad = THREE.MathUtils.degToRad(rollDeg);
-      const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
-
-      if (cubesatPreview) {
-        cubesatPreview.rotation.z = -rollRad;
-        cubesatPreview.rotation.x = pitchRad;
-        rendererPreview.render(scenePreview, cameraPreview);
-      }
-
-      if (cubesatFull) {
-        cubesatFull.rotation.z = -rollRad;
-        cubesatFull.rotation.x = pitchRad;
-        rendererFull.render(sceneFull, cameraFull);
-      }
-    }
-
-    function reset3DCamera() {
-      if (cameraFull) {
-        cameraFull.position.set(4, 4, 6);
-        cameraFull.lookAt(0, 0, 0);
-        if (rendererFull && sceneFull) {
-          rendererFull.render(sceneFull, cameraFull);
-        }
-      }
-    }
-
-    /* ==========================================================================
-       5. DASHBOARD UI DISPATCHER & MODAL SENSOR DRILLDOWN
-       ========================================================================== */
-    document.querySelectorAll(".nav-tab").forEach(tab => {
-      tab.addEventListener("click", () => {
-        document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
-        document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
-        
-        tab.classList.add("active");
-        const target = document.getElementById(`tab-${tab.dataset.tab}`);
-        if (target) {
-          target.classList.add("active");
-        }
-
-        setTimeout(() => {
-          onWindowResize();
-          Object.values(chartInstances).forEach(c => c.resize());
-        }, 50);
-      });
-    });
-
-    function renderDashboardUI() {
-      const d = window.AstraState.current;
-      const s = window.AstraState.stats;
-
-      document.getElementById("packetBadge").textContent = `PACKETS: ${d.packetCount}`;
-      
-      const telemBadge = document.getElementById("telemStatus");
-      telemBadge.textContent = "TELEMETRY: LIVE";
-      telemBadge.className = "status-badge live";
-      
-      document.getElementById("footerConnection").textContent = "SYNCHRONIZED (1 Hz)";
-
-      // Primary Metric Cards
-      document.getElementById("val-temp").innerHTML = `${d.temperature.toFixed(2)} <span class="unit">°C</span>`;
-      document.getElementById("min-temp").textContent = s.temp.min === Infinity ? "0.0" : s.temp.min.toFixed(1);
-      document.getElementById("max-temp").textContent = s.temp.max === -Infinity ? "0.0" : s.temp.max.toFixed(1);
-      document.getElementById("avg-temp").textContent = s.temp.count === 0 ? "0.0" : (s.temp.sum / s.temp.count).toFixed(1);
-
-      document.getElementById("val-hum").innerHTML = `${d.humidity.toFixed(1)} <span class="unit">%</span>`;
-      document.getElementById("min-hum").textContent = s.hum.min === Infinity ? "0.0" : s.hum.min.toFixed(1);
-      document.getElementById("max-hum").textContent = s.hum.max === -Infinity ? "0.0" : s.hum.max.toFixed(1);
-      document.getElementById("avg-hum").textContent = s.hum.count === 0 ? "0.0" : (s.hum.sum / s.hum.count).toFixed(1);
-
-      document.getElementById("val-pres").innerHTML = `${d.pressure.toFixed(2)} <span class="unit">hPa</span>`;
-      document.getElementById("min-pres").textContent = s.pres.min === Infinity ? "0.0" : s.pres.min.toFixed(1);
-      document.getElementById("max-pres").textContent = s.pres.max === -Infinity ? "0.0" : s.pres.max.toFixed(1);
-      document.getElementById("avg-pres").textContent = s.pres.count === 0 ? "0.0" : (s.pres.sum / s.pres.count).toFixed(1);
-
-      document.getElementById("val-roll").textContent = `${d.roll.toFixed(2)}°`;
-      document.getElementById("val-pitch").textContent = `${d.pitch.toFixed(2)}°`;
-      document.getElementById("val-accelZ").textContent = d.accelZ.toFixed(2);
-
-      document.getElementById("val-lat").textContent = d.latitude.toFixed(6);
-      document.getElementById("val-lng").textContent = d.longitude.toFixed(6);
-      document.getElementById("val-alt").textContent = `${d.altitude.toFixed(1)} m`;
-      document.getElementById("val-sats").textContent = d.satellites;
-
-      document.getElementById("val-solar").innerHTML = `${d.vSolar.toFixed(2)} <span class="unit">V</span>`;
-
-      // Flight Dynamics Tab
-      document.getElementById("full-roll").textContent = `${d.roll.toFixed(2)}°`;
-      document.getElementById("full-pitch").textContent = `${d.pitch.toFixed(2)}°`;
-      document.getElementById("full-ax").textContent = `${d.accelX.toFixed(3)} g`;
-      document.getElementById("full-ay").textContent = `${d.accelY.toFixed(3)} g`;
-      document.getElementById("full-az").textContent = `${d.accelZ.toFixed(3)} g`;
-      document.getElementById("full-gx").textContent = `${d.gyroX.toFixed(2)} °/s`;
-      document.getElementById("full-gy").textContent = `${d.gyroY.toFixed(2)} °/s`;
-      document.getElementById("full-gz").textContent = `${d.gyroZ.toFixed(2)} °/s`;
-
-      // GPS Tab
-      document.getElementById("gps-lat").textContent = `${d.latitude.toFixed(6)}°`;
-      document.getElementById("gps-lng").textContent = `${d.longitude.toFixed(6)}°`;
-      document.getElementById("gps-alt").textContent = `${d.altitude.toFixed(1)} m`;
-      document.getElementById("gps-speed").textContent = `${d.speed.toFixed(2)} km/h`;
-      document.getElementById("gps-sats").textContent = d.satellites;
-      document.getElementById("gps-fix-state").textContent = d.gpsFix ? "3D EPHEMERIS FIX" : "NO FIX";
-
-      // Status Badges
-      updateBadge("badge-temp", d.sensorStatus.bmp || d.sensorStatus.dht);
-      updateBadge("badge-hum", d.sensorStatus.dht);
-      updateBadge("badge-pres", d.sensorStatus.bmp);
-      updateBadge("badge-mpu", d.sensorStatus.mpu);
-      
-      const gpsBadge = document.getElementById("badge-gps");
-      if (d.gpsFix) {
-        gpsBadge.className = "badge badge-online";
-        gpsBadge.textContent = "LOCKED";
-      } else {
-        gpsBadge.className = "badge badge-error";
-        gpsBadge.textContent = "NO FIX";
-      }
-
-      // Health Table Rows
-      document.getElementById("health-rf").textContent = "LINK ACTIVE";
-      document.getElementById("health-rf").className = "badge-online";
-      document.getElementById("health-rf-desc").textContent = `ESP-NOW Packet ID #${d.packetCount}`;
-
-      setHealthRow("health-bmp", "health-bmp-desc", d.sensorStatus.bmp, "I2C ACK (0x76/0x77)");
-      setHealthRow("health-dht", "health-dht-desc", d.sensorStatus.dht, "1-Wire ACK (GPIO 4)");
-      setHealthRow("health-mpu", "health-mpu-desc", d.sensorStatus.mpu, "WHO_AM_I 0x68 OK");
-      setHealthRow("health-gps", "health-gps-desc", d.gpsFix, d.gpsFix ? `${d.satellites} Sats in Lock` : "Awaiting Satellite Constellation");
-    }
-
-    function updateBadge(id, isHealthy) {
-      const el = document.getElementById(id);
-      if (isHealthy) {
-        el.className = "badge badge-online";
-        el.textContent = "HEALTHY";
-      } else {
-        el.className = "badge badge-error";
-        el.textContent = "OFFLINE";
-      }
-    }
-
-    function setHealthRow(statusId, descId, isHealthy, successText) {
-      const s = document.getElementById(statusId);
-      const d = document.getElementById(descId);
-      if (isHealthy) {
-        s.textContent = "ONLINE";
-        s.className = "badge-online";
-        d.textContent = successText;
-      } else {
-        s.textContent = "FAULT";
-        s.className = "badge-error";
-        d.textContent = "Sensor unresponsive";
-      }
-    }
-
-    // Modal Drilldown
-    let modalChartInstance = null;
-
-    function openDetail(sensorKey) {
-      const modal = document.getElementById("sensorDetailModal");
-      const title = document.getElementById("modalTitle");
-      const metric = document.getElementById("modalMetric");
-      const stats = document.getElementById("modalStats");
-      const history = window.AstraState.history;
-
-      modal.classList.remove("hidden");
-
-      let label = "";
-      let unit = "";
-      let points = [];
-
-      if (sensorKey === "temp") {
-        label = "TEMPERATURE PROFILE";
-        unit = "°C";
-        metric.textContent = `${window.AstraState.current.temperature.toFixed(2)} ${unit}`;
-        points = history.map(h => ({ x: h.timestamp, y: h.data.temperature }));
-      } else if (sensorKey === "hum") {
-        label = "RELATIVE HUMIDITY PROFILE";
-        unit = "%";
-        metric.textContent = `${window.AstraState.current.humidity.toFixed(1)} ${unit}`;
-        points = history.map(h => ({ x: h.timestamp, y: h.data.humidity }));
-      } else if (sensorKey === "pres") {
-        label = "ATMOSPHERIC PRESSURE PROFILE";
-        unit = "hPa";
-        metric.textContent = `${window.AstraState.current.pressure.toFixed(2)} ${unit}`;
-        points = history.map(h => ({ x: h.timestamp, y: h.data.pressure }));
-      } else {
-        label = "INERTIAL DYNAMICS";
-        metric.textContent = `ROLL: ${window.AstraState.current.roll.toFixed(1)}° | PITCH: ${window.AstraState.current.pitch.toFixed(1)}°`;
-        points = history.map(h => ({ x: h.timestamp, y: h.data.roll }));
-      }
-
-      title.textContent = label;
-      stats.textContent = `SAMPLES RECORDED: ${points.length} | TIME HORIZON: 15 MINUTES`;
-
-      if (modalChartInstance) {
-        modalChartInstance.destroy();
-      }
-
-      modalChartInstance = new Chart(document.getElementById("modalChart"), {
-        type: 'line',
-        data: {
-          datasets: [{
-            label: label,
-            borderColor: '#00e5ff',
-            borderWidth: 2,
-            data: points,
-            pointRadius: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: {
-              type: 'linear',
-              grid: { color: '#141f3d' },
-              ticks: {
-                color: '#798bb4',
-                callback: (v) => new Date(v).toTimeString().substring(3, 8)
-              }
-            },
-            y: {
-              grid: { color: '#141f3d' },
-              ticks: { color: '#798bb4' }
-            }
-          }
-        }
-      });
-    }
-
-    function closeDetail() {
-      document.getElementById("sensorDetailModal").classList.add("hidden");
-      if (modalChartInstance) {
-        modalChartInstance.destroy();
-        modalChartInstance = null;
-      }
-    }
-
-    // Independent UTC Clock
-    setInterval(() => {
-      const now = new Date();
-      document.getElementById("missionClock").textContent = `${now.toISOString().substring(11, 19)} UTC`;
-    }, 1000);
-
-    // Initialization
-    window.addEventListener("DOMContentLoaded", () => {
-      initCharts();
-      init3D();
-    });
-  </script>
 </body>
 </html>
