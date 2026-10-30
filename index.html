@@ -223,6 +223,65 @@ let lastPacketKey = null;
 let lastPacketTime = 0;
 let lastPacketNo = null;
 let textBuffer = "";
+ let jsonDepth = 0;
+let jsonString = false;
+let jsonEscape = false;
+
+function processSerialText(chunk) {
+  for (const ch of chunk) {
+    if (jsonDepth === 0) {
+      if (ch === "{") {
+        textBuffer = "{";
+        jsonDepth = 1;
+        jsonString = false;
+        jsonEscape = false;
+      }
+      continue;
+    }
+
+    textBuffer += ch;
+
+    if (jsonString) {
+      if (jsonEscape) {
+        jsonEscape = false;
+      } else if (ch === "\\") {
+        jsonEscape = true;
+      } else if (ch === '"') {
+        jsonString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      jsonString = true;
+    } else if (ch === "{") {
+      jsonDepth++;
+    } else if (ch === "}") {
+      jsonDepth--;
+
+      if (jsonDepth === 0) {
+        try {
+          const data = JSON.parse(textBuffer);
+
+          if (data && typeof data === "object" && !data.error) {
+            updateTelemetry(data);
+          }
+        } catch (error) {
+          console.warn("JSON Parse Error:", error, textBuffer);
+        }
+
+        textBuffer = "";
+      }
+    }
+
+    if (textBuffer.length > 20000) {
+      textBuffer = "";
+      jsonDepth = 0;
+      jsonString = false;
+      jsonEscape = false;
+    }
+  }
+}
 let cube = null;
 let cubeReady = false;
 
@@ -412,38 +471,24 @@ async function connectESP32() {
 }
 
 async function readSerial() {
- try {
-  while(keepReading && reader) {
-   const {value,done}=await reader.read();
-   if(done) break;
-   if(!value) continue;
+  try {
+    while (keepReading && reader) {
+      const { value, done } = await reader.read();
 
-   textBuffer+=value;
-   let lines=textBuffer.split(/\r?\n/);
-   textBuffer=lines.pop() || "";
+      if (done) break;
+      if (!value) continue;
 
-   // Prevent unbounded memory use from malformed serial data.
-   if(textBuffer.length>10000) textBuffer="";
-
-   for(const line of lines) {
-    const trimmed=line.trim();
-    if(!trimmed) continue;
-
-    try {
-     const parsed=JSON.parse(trimmed);
-     if(parsed && typeof parsed==="object" && !Array.isArray(parsed) && !parsed.error) {
-      updateTelemetry(parsed);
-     }
-    } catch(e) {
-     // Ignore malformed or non-JSON serial lines.
+      processSerialText(value);
     }
-   }
+  } catch (err) {
+    if (keepReading) {
+      console.error("Serial Read Error:", err);
+    }
+  } finally {
+    if (keepReading) {
+      await disconnectESP32();
+    }
   }
- } catch(err) {
-  if(keepReading) console.warn("Serial read stopped:",err.message);
- } finally {
-  if(keepReading) await disconnectESP32();
- }
 }
 
 async function disconnectESP32() {
