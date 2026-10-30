@@ -1,3 +1,1637 @@
-{
-  "response": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>ASTRA ORBIT 2.0 \u2014 CubeSat Mission Control</title>\n  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@600;800;900&display=swap\" rel=\"stylesheet\">\n  <script src=\"https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js\"></script>\n  <script src=\"https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js\"></script>\n  <script src=\"https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js\"></script>\n  <style>\n    :root {\n      --bg-space: #030712;\n      --bg-panel: rgba(11, 18, 38, 0.85);\n      --bg-panel-hover: rgba(16, 27, 56, 0.95);\n      --border-hud: rgba(0, 229, 255, 0.22);\n      --border-hud-bright: rgba(0, 229, 255, 0.65);\n      --cyan-neon: #00e5ff;\n      --blue-glow: #0077ff;\n      --status-ok: #00ffaa;\n      --status-warn: #ffaa00;\n      --status-crit: #ff3366;\n      --status-neutral: #8b9bb4;\n      --text-main: #f0f6fc;\n      --text-muted: #8b9bb4;\n      --font-display: 'Orbitron', sans-serif;\n      --font-mono: 'JetBrains Mono', monospace;\n      --font-ui: 'Inter', sans-serif;\n      --shadow-hud: 0 0 20px rgba(0, 229, 255, 0.08);\n      --glow-cyan: 0 0 10px rgba(0, 229, 255, 0.4);\n    }\n    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }\n    body {\n      background-color: var(--bg-space);\n      color: var(--text-main);\n      font-family: var(--font-ui);\n      overflow-x: hidden;\n      min-height: 100vh;\n      background-image:\n        radial-gradient(circle at 50% 0%, rgba(0, 119, 255, 0.08) 0%, transparent 60%),\n        radial-gradient(circle at 90% 80%, rgba(0, 229, 255, 0.04) 0%, transparent 40%),\n        linear-gradient(rgba(3, 7, 18, 0.92), rgba(3, 7, 18, 0.92)),\n        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 229, 255, 0.012) 2px, rgba(0, 229, 255, 0.012) 4px);\n    }\n    .scanlines {\n      position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n      pointer-events: none; z-index: 999;\n      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));\n      background-size: 100% 3px, 6px 100%; opacity: 0.5;\n    }\n    header.hud-header {\n      background: rgba(8, 14, 30, 0.92);\n      border-bottom: 1px solid var(--border-hud);\n      backdrop-filter: blur(14px);\n      padding: 10px 24px;\n      display: flex; justify-content: space-between; align-items: center;\n      position: sticky; top: 0; z-index: 100;\n      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);\n    }\n    .brand-section { display: flex; align-items: center; gap: 16px; }\n    .brand-logo { display: flex; align-items: center; gap: 10px; }\n    .brand-logo svg { width: 32px; height: 32px; filter: drop-shadow(var(--glow-cyan)); }\n    .brand-title h1 {\n      font-family: var(--font-display); font-size: 1.15rem;\n      letter-spacing: 2px; color: #fff;\n      display: flex; align-items: center; gap: 8px;\n    }\n    .brand-title h1 span { color: var(--cyan-neon); text-shadow: var(--glow-cyan); }\n    .mission-meta-badge { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted); letter-spacing: 1px; }\n    .hud-statuses { display: flex; align-items: center; gap: 16px; }\n    .status-pill {\n      display: flex; align-items: center; gap: 8px;\n      padding: 5px 12px; border-radius: 4px;\n      background: rgba(255, 255, 255, 0.04);\n      border: 1px solid rgba(255, 255, 255, 0.08);\n      font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.5px;\n    }\n    .beacon-dot {\n      width: 8px; height: 8px; border-radius: 50%;\n      background: var(--status-neutral); box-shadow: 0 0 6px var(--status-neutral);\n    }\n    .beacon-dot.ok { background: var(--status-ok); box-shadow: 0 0 8px var(--status-ok); animation: pulse-beacon 1.8s infinite; }\n    .beacon-dot.warn { background: var(--status-warn); box-shadow: 0 0 8px var(--status-warn); animation: pulse-beacon 1.2s infinite; }\n    .beacon-dot.crit { background: var(--status-crit); box-shadow: 0 0 8px var(--status-crit); animation: pulse-beacon 0.8s infinite; }\n    @keyframes pulse-beacon { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }\n    .hud-controls-group { display: flex; align-items: center; gap: 10px; }\n    .hud-btn {\n      background: rgba(0, 229, 255, 0.08);\n      border: 1px solid var(--border-hud);\n      color: var(--cyan-neon); font-family: var(--font-mono);\n      font-size: 0.72rem; padding: 6px 14px; border-radius: 4px;\n      cursor: pointer; display: inline-flex; align-items: center; gap: 6px;\n      transition: all 0.2s ease;\n    }\n    .hud-btn:hover {\n      background: rgba(0, 229, 255, 0.2); border-color: var(--cyan-neon);\n      box-shadow: var(--glow-cyan); transform: translateY(-1px);\n    }\n    .hud-btn.active { background: var(--cyan-neon); color: var(--bg-space); font-weight: 700; }\n    .hud-btn.conn-active { background: rgba(0, 255, 170, 0.15); border-color: var(--status-ok); color: var(--status-ok); }\n    .hud-btn.mode-demo { background: rgba(255, 170, 0, 0.15); border-color: var(--status-warn); color: var(--status-warn); }\n    .time-hud { text-align: right; font-family: var(--font-mono); min-width: 170px; }\n    .utc-time { font-size: 0.88rem; font-weight: 700; color: #fff; letter-spacing: 1px; }\n    .met-timer { font-size: 0.65rem; color: var(--cyan-neon); letter-spacing: 0.5px; }\n    main.mission-grid {\n      display: grid; grid-template-columns: 340px 1fr 340px; gap: 16px;\n      padding: 16px; height: calc(100vh - 66px); box-sizing: border-box;\n    }\n    .telemetry-column { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; padding-right: 4px; }\n    .telemetry-column::-webkit-scrollbar { width: 4px; }\n    .telemetry-column::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.2); border-radius: 4px; }\n    .telem-card {\n      background: var(--bg-panel); border: 1px solid var(--border-hud); border-radius: 6px;\n      padding: 12px 14px; position: relative; cursor: pointer;\n      transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);\n      backdrop-filter: blur(8px); box-shadow: var(--shadow-hud); overflow: hidden;\n    }\n    .telem-card::before {\n      content: ''; position: absolute; top: 0; left: 0; width: 3px; height: 100%;\n      background: var(--cyan-neon); opacity: 0.7; transition: width 0.2s ease;\n    }\n    .telem-card:hover { background: var(--bg-panel-hover); border-color: var(--border-hud-bright); transform: translateX(3px); }\n    .telem-card:hover::before { width: 5px; }\n    .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }\n    .card-title {\n      font-family: var(--font-display); font-size: 0.68rem; letter-spacing: 1.2px;\n      color: var(--text-muted); text-transform: uppercase;\n      display: flex; align-items: center; gap: 6px;\n    }\n    .card-badge {\n      font-family: var(--font-mono); font-size: 0.6rem; padding: 2px 6px; border-radius: 3px;\n      background: rgba(139, 155, 180, 0.12); color: var(--status-neutral);\n      border: 1px solid rgba(139, 155, 180, 0.3);\n    }\n    .card-badge.ok { background: rgba(0, 255, 170, 0.12); color: var(--status-ok); border-color: rgba(0, 255, 170, 0.3); }\n    .card-badge.warn { background: rgba(255, 170, 0, 0.12); color: var(--status-warn); border-color: rgba(255, 170, 0, 0.3); }\n    .card-badge.crit { background: rgba(255, 51, 102, 0.12); color: var(--status-crit); border-color: rgba(255, 51, 102, 0.3); }\n    .card-main-val {\n      font-family: var(--font-mono); font-size: 1.8rem; font-weight: 700;\n      color: #fff; display: flex; align-items: baseline; gap: 4px; line-height: 1.1;\n    }\n    .val-unit { font-size: 0.85rem; color: var(--cyan-neon); font-weight: 400; }\n    .card-footer {\n      display: flex; justify-content: space-between; align-items: center;\n      margin-top: 8px; padding-top: 6px; border-top: 1px dashed rgba(255, 255, 255, 0.08);\n      font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);\n    }\n    .trend-pill { display: flex; align-items: center; gap: 4px; }\n    .trend-up { color: var(--status-ok); }\n    .trend-down { color: var(--cyan-neon); }\n    .trend-steady { color: var(--text-muted); }\n    .axis-bars-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }\n    .axis-box {\n      background: rgba(0, 0, 0, 0.3); padding: 6px; border-radius: 4px;\n      border: 1px solid rgba(255, 255, 255, 0.05); text-align: center;\n    }\n    .axis-label { font-family: var(--font-mono); font-size: 0.6rem; color: var(--text-muted); }\n    .axis-val { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; color: #fff; margin-top: 2px; }\n    .axis-bar-wrap { width: 100%; height: 4px; background: rgba(255, 255, 255, 0.1); border-radius: 2px; margin-top: 4px; overflow: hidden; }\n    .axis-fill { height: 100%; background: var(--cyan-neon); transition: width 0.2s ease; }\n    .center-stage { display: flex; flex-direction: column; gap: 12px; position: relative; }\n    .hud-window {\n      background: var(--bg-panel); border: 1px solid var(--border-hud);\n      border-radius: 6px; position: relative; overflow: hidden;\n      backdrop-filter: blur(10px); box-shadow: var(--shadow-hud);\n    }\n    .window-header {\n      padding: 8px 14px; background: rgba(0, 15, 35, 0.7);\n      border-bottom: 1px solid var(--border-hud); display: flex;\n      justify-content: space-between; align-items: center;\n    }\n    .window-header-title {\n      font-family: var(--font-display); font-size: 0.75rem;\n      letter-spacing: 1.5px; color: #fff; display: flex; align-items: center; gap: 8px;\n    }\n    .window-header-title svg { width: 14px; height: 14px; color: var(--cyan-neon); }\n    .viewport-3d-box {\n      flex: 1.4; min-height: 380px; position: relative;\n      background: radial-gradient(circle at 50% 50%, #08152e 0%, #030712 90%);\n    }\n    #webgl-cubesat { width: 100%; height: 100%; display: block; cursor: grab; }\n    #webgl-cubesat:active { cursor: grabbing; }\n    .viewport-hud-overlay {\n      position: absolute; top: 10px; left: 12px; pointer-events: none;\n      font-family: var(--font-mono); font-size: 0.68rem; color: var(--cyan-neon);\n      display: flex; flex-direction: column; gap: 4px;\n      background: rgba(3, 7, 18, 0.75); padding: 8px 12px;\n      border-radius: 4px; border-left: 2px solid var(--cyan-neon);\n    }\n    .attitude-floating-box {\n      position: absolute; bottom: 12px; right: 12px;\n      background: rgba(3, 7, 18, 0.85); border: 1px solid var(--border-hud);\n      border-radius: 4px; padding: 8px 14px; font-family: var(--font-mono);\n      font-size: 0.72rem; display: flex; gap: 16px;\n      backdrop-filter: blur(6px); z-index: 10;\n    }\n    .attitude-tag { color: var(--text-muted); }\n    .attitude-num { color: #fff; font-weight: 700; margin-left: 4px; }\n    .viewport-tools { position: absolute; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 10; }\n    .tool-icon-btn {\n      background: rgba(3, 7, 18, 0.8); border: 1px solid var(--border-hud);\n      color: var(--cyan-neon); padding: 6px 10px; border-radius: 4px;\n      font-family: var(--font-mono); font-size: 0.65rem; cursor: pointer;\n      display: flex; align-items: center; gap: 4px; transition: all 0.2s ease;\n    }\n    .tool-icon-btn:hover { background: var(--cyan-neon); color: var(--bg-space); }\n    .center-lower-split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 220px; }\n    .groundtrack-box { position: relative; background: #02050e; overflow: hidden; display: flex; flex-direction: column; }\n    #groundtrack-canvas { width: 100%; height: 100%; display: block; }\n    .live-chart-box { display: flex; flex-direction: column; }\n    .chart-container-inner { flex: 1; position: relative; padding: 8px 12px; min-height: 160px; }\n    .chart-empty-overlay {\n      position: absolute; top: 0; left: 0; width: 100%; height: 100%;\n      display: flex; align-items: center; justify-content: center;\n      font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted);\n      background: rgba(3, 7, 18, 0.65); pointer-events: none;\n    }\n    .mission-footer-log {\n      grid-column: 1 / -1; background: rgba(6, 11, 24, 0.95);\n      border: 1px solid var(--border-hud); border-radius: 4px;\n      padding: 6px 14px; display: flex; align-items: center;\n      justify-content: space-between; font-family: var(--font-mono); font-size: 0.68rem;\n    }\n    .terminal-feed {\n      display: flex; align-items: center; gap: 12px;\n      overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-muted);\n    }\n    .terminal-feed .term-time { color: var(--cyan-neon); }\n    .terminal-feed .term-text { color: #fff; }\n    .sensor-modal-overlay {\n      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;\n      background: rgba(1, 4, 10, 0.85); backdrop-filter: blur(16px);\n      z-index: 2000; display: none; align-items: center;\n      justify-content: center; padding: 24px;\n    }\n    .sensor-modal-overlay.active { display: flex; }\n    .sensor-modal-window {\n      background: #091124; border: 1px solid var(--border-hud-bright);\n      border-radius: 8px; width: 100%; max-width: 940px;\n      max-height: 90vh; display: flex; flex-direction: column;\n      box-shadow: 0 0 40px rgba(0, 229, 255, 0.25); overflow: hidden;\n    }\n    .modal-hdr {\n      background: rgba(3, 7, 18, 0.9); border-bottom: 1px solid var(--border-hud);\n      padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;\n    }\n    .modal-title-group { display: flex; align-items: center; gap: 12px; }\n    .modal-title-group h2 { font-family: var(--font-display); font-size: 1.1rem; letter-spacing: 1.5px; color: #fff; }\n    .modal-close-btn {\n      background: transparent; border: 1px solid rgba(255, 255, 255, 0.15);\n      color: var(--text-muted); width: 32px; height: 32px; border-radius: 4px;\n      cursor: pointer; display: flex; align-items: center; justify-content: center;\n    }\n    .modal-close-btn:hover { border-color: var(--status-crit); color: var(--status-crit); background: rgba(255, 51, 102, 0.1); }\n    .modal-body { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }\n    .stats-matrix-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }\n    .stat-chip {\n      background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);\n      border-radius: 6px; padding: 10px 14px; font-family: var(--font-mono);\n    }\n    .stat-chip-label { font-size: 0.65rem; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; }\n    .stat-chip-value {\n      font-size: 1.25rem; font-weight: 700; color: #fff;\n      margin-top: 4px; display: flex; align-items: baseline; gap: 4px;\n    }\n    .stat-chip-value small { font-size: 0.7rem; color: var(--cyan-neon); font-weight: 400; }\n    .modal-chart-stage {\n      background: rgba(3, 7, 18, 0.6); border: 1px solid rgba(255, 255, 255, 0.06);\n      border-radius: 6px; padding: 14px; height: 300px; position: relative;\n    }\n    .sensor-history-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.72rem; }\n    .sensor-history-table th {\n      text-align: left; padding: 8px 12px; color: var(--cyan-neon);\n      border-bottom: 1px solid var(--border-hud); background: rgba(0, 229, 255, 0.03);\n    }\n    .sensor-history-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); color: var(--text-muted); }\n    .sensor-history-table tr:hover td { color: #fff; background: rgba(255, 255, 255, 0.02); }\n    .table-container { max-height: 180px; overflow-y: auto; border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 4px; }\n    .toast-hud {\n      position: fixed; bottom: 40px; right: 24px; background: rgba(9, 17, 36, 0.95);\n      border: 1px solid var(--cyan-neon); border-left: 4px solid var(--cyan-neon);\n      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8); padding: 12px 20px; border-radius: 4px;\n      font-family: var(--font-mono); font-size: 0.78rem; z-index: 3000;\n      display: flex; align-items: center; gap: 12px; transform: translateY(120%);\n      transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);\n    }\n    .toast-hud.show { transform: translateY(0); }\n    .toast-hud.crit { border-color: var(--status-crit); border-left-color: var(--status-crit); }\n    .subsystem-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 8px; }\n    .subsystem-pill {\n      display: flex; align-items: center; justify-content: space-between;\n      background: rgba(255, 255, 255, 0.03); padding: 6px 10px; border-radius: 4px;\n      border: 1px solid rgba(255, 255, 255, 0.05); font-family: var(--font-mono); font-size: 0.65rem;\n    }\n    .subsystem-name { color: var(--text-muted); }\n    .subsystem-led { width: 6px; height: 6px; border-radius: 50%; background: var(--status-neutral); }\n    .subsystem-led.ok { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }\n    @media (max-width: 1400px) { main.mission-grid { grid-template-columns: 290px 1fr 290px; } }\n    @media (max-width: 1100px) {\n      body { overflow-y: auto; }\n      main.mission-grid { display: flex; flex-direction: column; height: auto; }\n      .center-stage { min-height: 600px; }\n      .viewport-3d-box { min-height: 400px; }\n    }\n  </style>\n</head>\n<body>\n  <div class=\"scanlines\"></div>\n  <header class=\"hud-header\">\n    <div class=\"brand-section\">\n      <div class=\"brand-logo\">\n        <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n          <polygon points=\"12 2 19 21 12 17 5 21 12 2\" fill=\"rgba(0, 229, 255, 0.15)\" stroke=\"#00e5ff\"/>\n          <circle cx=\"12\" cy=\"11\" r=\"2\" fill=\"#00e5ff\"/>\n        </svg>\n        <div class=\"brand-title\">\n          <h1>ASTRA ORBIT <span>2.0</span></h1>\n          <div class=\"mission-meta-badge\">1U CubeSat Flight Ground Station // SSC-59281</div>\n        </div>\n      </div>\n    </div>\n    <div class=\"hud-statuses\">\n      <div class=\"status-pill\" title=\"Ground Station Operating Mode\">\n        <span id=\"status-mode-pill\" style=\"color:#fff;\">MODE: <strong>LIVE HARDWARE</strong></span>\n      </div>\n      <div class=\"status-pill\" title=\"ESP32 Serial USB Connection\">\n        <div class=\"beacon-dot\" id=\"status-esp-beacon\"></div>\n        <span>ESP32: <strong id=\"status-esp-text\" style=\"color:var(--text-muted);\">DISCONNECTED</strong></span>\n      </div>\n      <div class=\"status-pill\" title=\"Telemetry Feed State\">\n        <div class=\"beacon-dot\" id=\"status-telem-beacon\"></div>\n        <span>TELEMETRY: <strong id=\"status-telem-rate\" style=\"color:var(--text-muted);\">NO DATA</strong></span>\n      </div>\n    </div>\n    <div class=\"hud-controls-group\">\n      <button class=\"hud-btn\" id=\"btn-serial-connect\" title=\"Connect to ESP32 Receiver via Web Serial API\">\n        <svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><rect x=\"2\" y=\"14\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><line x1=\"6\" y1=\"6\" x2=\"6.01\" y2=\"6\"/><line x1=\"6\" y1=\"18\" x2=\"6.01\" y2=\"18\"/></svg>\n        <span id=\"serial-btn-label\">CONNECT ESP32</span>\n      </button>\n      <button class=\"hud-btn\" id=\"btn-toggle-demo\" title=\"Toggle Demo Simulation Mode\">\n        <span id=\"demo-btn-label\">DEMO MODE: OFF</span>\n      </button>\n      <button class=\"hud-btn\" id=\"btn-audio-toggle\" title=\"Toggle Audio Telemetry Beeps\">\n        <span id=\"audio-btn-label\">AUDIO: ON</span>\n      </button>\n      <div class=\"time-hud\">\n        <div class=\"utc-time\" id=\"clock-utc\">00:00:00 UTC</div>\n        <div class=\"met-timer\">MET: <span id=\"clock-met\">T+000:00:00:00</span></div>\n      </div>\n    </div>\n  </header>\n  <main class=\"mission-grid\">\n    <aside class=\"telemetry-column\">\n      <!-- 1. Temperature -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('temp')\" title=\"Click for deep-dive temperature telemetry\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z\"/></svg>\n            Internal Temp\n          </div>\n          <span class=\"card-badge\" id=\"badge-temp\">WAITING</span>\n        </div>\n        <div class=\"card-main-val\">\n          <span id=\"val-temp\">--</span>\n          <span class=\"val-unit\">°C</span>\n        </div>\n        <div class=\"card-footer\">\n          <span class=\"trend-pill trend-steady\" id=\"trend-temp\">--</span>\n          <span>PREV: <span id=\"prev-temp\">--</span>°C</span>\n        </div>\n      </article>\n      <!-- 2. Humidity -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('humidity')\" title=\"Click for payload bay humidity analytics\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z\"/></svg>\n            Chamber Humidity\n          </div>\n          <span class=\"card-badge\" id=\"badge-humidity\">WAITING</span>\n        </div>\n        <div class=\"card-main-val\">\n          <span id=\"val-humidity\">--</span>\n          <span class=\"val-unit\">% RH</span>\n        </div>\n        <div class=\"card-footer\">\n          <span class=\"trend-pill trend-steady\" id=\"trend-humidity\">--</span>\n          <span>PREV: <span id=\"prev-humidity\">--</span>%</span>\n        </div>\n      </article>\n      <!-- 3. Pressure -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('pressure')\" title=\"Click for barometric pressure details\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M16 12l-4-4-4 4M12 16V8\"/></svg>\n            Payload Pressure\n          </div>\n          <span class=\"card-badge\" id=\"badge-pressure\">WAITING</span>\n        </div>\n        <div class=\"card-main-val\">\n          <span id=\"val-pressure\">--</span>\n          <span class=\"val-unit\">hPa</span>\n        </div>\n        <div class=\"card-footer\">\n          <span class=\"trend-pill trend-steady\" id=\"trend-pressure\">--</span>\n          <span>PREV: <span id=\"prev-pressure\">--</span> hPa</span>\n        </div>\n      </article>\n      <!-- 8. System Status -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('system')\" title=\"Click for ESP32 and packet status\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><rect x=\"2\" y=\"2\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/><rect x=\"2\" y=\"14\" width=\"20\" height=\"8\" rx=\"2\" ry=\"2\"/></svg>\n            OBC / EPS Subsystems\n          </div>\n          <span class=\"card-badge\" id=\"badge-system\">STANDBY</span>\n        </div>\n        <div class=\"card-main-val\" style=\"font-size: 1.25rem;\">\n          <span id=\"val-rssi\">--</span> <span class=\"val-unit\">dBm</span>\n          <span style=\"font-size: 0.85rem; color: var(--text-muted); margin: 0 8px;\">|</span>\n          <span id=\"val-fix-short\" style=\"font-size: 1.1rem;\">NO FIX</span>\n        </div>\n        <div class=\"subsystem-grid\">\n          <div class=\"subsystem-pill\"><span class=\"subsystem-name\">MPU-6050</span><span class=\"subsystem-led\" id=\"led-mpu\"></span></div>\n          <div class=\"subsystem-pill\"><span class=\"subsystem-name\">BMP-280</span><span class=\"subsystem-led\" id=\"led-bmp\"></span></div>\n          <div class=\"subsystem-pill\"><span class=\"subsystem-name\">DHT-11</span><span class=\"subsystem-led\" id=\"led-dht\"></span></div>\n          <div class=\"subsystem-pill\"><span class=\"subsystem-name\">GPS NEO-M8</span><span class=\"subsystem-led\" id=\"led-gps\"></span></div>\n        </div>\n        <div class=\"card-footer\">\n          <span>PACKETS: <strong id=\"val-pkt-count\" style=\"color:#fff;\">0</strong></span>\n          <span>LAST RX: <strong id=\"val-last-rx\" style=\"color:var(--cyan-neon);\">--</strong></span>\n        </div>\n      </article>\n    </aside>\n    <section class=\"center-stage\">\n      <div class=\"hud-window viewport-3d-box\">\n        <div class=\"window-header\">\n          <div class=\"window-header-title\">\n            <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z\"></path></svg>\n            REAL-TIME 3D ATTITUDE DETERMINATION & CUBESAT TWIN\n          </div>\n          <div style=\"font-family: var(--font-mono); font-size: 0.65rem; color: var(--cyan-neon);\">\n            FRAME: BODY FIXED [AHRS]\n          </div>\n        </div>\n        <canvas id=\"webgl-cubesat\"></canvas>\n        <div class=\"viewport-hud-overlay\">\n          <div>MODEL: ASTRA-1U-CUBESAT-FLIGHT</div>\n          <div>MPU WHOAMI: <span id=\"hud-whoami\">--</span></div>\n          <div>ATTITUDE STATUS: <span id=\"hud-att-status\">STATIONARY / NO DATA</span></div>\n        </div>\n        <div class=\"viewport-tools\">\n          <button class=\"tool-icon-btn\" id=\"btn-toggle-wireframe\">WIREFRAME</button>\n          <button class=\"tool-icon-btn\" id=\"btn-reset-cam\">RESET CAM</button>\n        </div>\n        <div class=\"attitude-floating-box\">\n          <div><span class=\"attitude-tag\">ROLL:</span><span class=\"attitude-num\" id=\"hud-roll\">--</span></div>\n          <div><span class=\"attitude-tag\">PITCH:</span><span class=\"attitude-num\" id=\"hud-pitch\">--</span></div>\n          <div><span class=\"attitude-tag\">YAW:</span><span class=\"attitude-num\" id=\"hud-yaw\">--</span></div>\n        </div>\n      </div>\n      <div class=\"center-lower-split\">\n        <div class=\"hud-window groundtrack-box\" onclick=\"openSensorModal('gps')\" title=\"Click for high-accuracy GPS navigation\">\n          <div class=\"window-header\">\n            <div class=\"window-header-title\">\n              <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"></circle><line x1=\"2\" y1=\"12\" x2=\"22\" y2=\"12\"></line></svg>\n              ORBITAL / GROUND TRACK MONITOR\n            </div>\n            <div style=\"font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);\" id=\"map-sats-count\">\n              SATS: 0 (NO FIX)\n            </div>\n          </div>\n          <canvas id=\"groundtrack-canvas\"></canvas>\n        </div>\n        <div class=\"hud-window live-chart-box\">\n          <div class=\"window-header\">\n            <div class=\"window-header-title\">\n              <svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"22 12 18 12 15 21 9 3 6 12 2 12\"></polyline></svg>\n              PRIMARY TELEMETRY OSCILLOSCOPE (LAST 15 MIN)\n            </div>\n            <div style=\"font-family: var(--font-mono); font-size: 0.65rem; color: var(--cyan-neon);\" id=\"overview-chart-status\">\n              WAITING FOR TELEMETRY DATA\n            </div>\n          </div>\n          <div class=\"chart-container-inner\">\n            <canvas id=\"canvas-overview-chart\"></canvas>\n            <div class=\"chart-empty-overlay\" id=\"overview-empty-msg\">Waiting for telemetry data...</div>\n          </div>\n        </div>\n      </div>\n    </section>\n    <aside class=\"telemetry-column\">\n      <!-- 4. Accelerometer -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('accel')\" title=\"Click for 3-axis Accelerometer G-vector metrics\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M5 12h14M12 5l7 7-7 7\"/></svg>\n            Accelerometer (MPU-6050)\n          </div>\n          <span class=\"card-badge\" id=\"badge-accel\">WAITING</span>\n        </div>\n        <div class=\"card-main-val\">\n          <span id=\"val-accel-mag\">--</span>\n          <span class=\"val-unit\">|G| Total</span>\n        </div>\n        <div class=\"axis-bars-grid\">\n          <div class=\"axis-box\">\n            <div class=\"axis-label\">X AXIS</div>\n            <div class=\"axis-val\" id=\"val-acc-x\">--</div>\n            <div class=\"axis-bar-wrap\"><div class=\"axis-fill\" id=\"bar-acc-x\" style=\"width: 0%;\"></div></div>\n          </div>\n          <div class=\"axis-box\">\n            <div class=\"axis-label\">Y AXIS</div>\n            <div class=\"axis-val\" id=\"val-acc-y\">--</div>\n            <div class=\"axis-bar-wrap\"><div class=\"axis-fill\" id=\"bar-acc-y\" style=\"width: 0%;\"></div></div>\n          </div>\n          <div class=\"axis-box\">\n            <div class=\"axis-label\">Z AXIS</div>\n            <div class=\"axis-val\" id=\"val-acc-z\">--</div>\n            <div class=\"axis-bar-wrap\"><div class=\"axis-fill\" id=\"bar-acc-z\" style=\"width: 0%;\"></div></div>\n          </div>\n        </div>\n        <div class=\"card-footer\">\n          <span>SCALE: ±2G</span>\n          <span id=\"acc-status-footer\">WAITING FOR DATA</span>\n        </div>\n      </article>\n      <!-- 5. Gyroscope -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('gyro')\" title=\"Click for Angular Rate and Rotation analytics\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"3\"/><path d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z\"/></svg>\n            Gyroscope (Angular Rate)\n          </div>\n          <span class=\"card-badge\" id=\"badge-gyro\">WAITING</span>\n        </div>\n        <div class=\"card-main-val\">\n          <span id=\"val-gyro-mag\">--</span>\n          <span class=\"val-unit\">°/sec</span>\n        </div>\n        <div class=\"axis-bars-grid\">\n          <div class=\"axis-box\"><div class=\"axis-label\">ωX</div><div class=\"axis-val\" id=\"val-gyr-x\">--</div><div class=\"axis-bar-wrap\"><div class=\"axis-fill\" id=\"bar-gyr-x\" style=\"width: 0%;\"></div></div></div>\n          <div class=\"axis-box\"><div class=\"axis-label\">ωY</div><div class=\"axis-val\" id=\"val-gyr-y\">--</div><div class=\"axis-bar-wrap\"><div class=\"axis-fill\" id=\"bar-gyr-y\" style=\"width: 0%;\"></div></div></div>\n          <div class=\"axis-box\"><div class=\"axis-label\">ωZ</div><div class=\"axis-val\" id=\"val-gyr-z\">--</div><div class=\"axis-bar-wrap\"><div class=\"axis-fill\" id=\"bar-gyr-z\" style=\"width: 0%;\"></div></div></div>\n        </div>\n        <div class=\"card-footer\">\n          <span>SCALE: ±250 °/s</span>\n          <span id=\"gyro-status-footer\">WAITING FOR DATA</span>\n        </div>\n      </article>\n      <!-- 6. Orientation -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('orientation')\" title=\"Click for Euler angles & Attitude telemetry\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><polygon points=\"16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76\"/></svg>\n            Orientation (Euler Angles)\n          </div>\n          <span class=\"card-badge\" id=\"badge-orient\">WAITING</span>\n        </div>\n        <div class=\"card-main-val\">\n          <span id=\"card-primary-orient\">--</span>\n          <span class=\"val-unit\" id=\"card-secondary-orient\">--</span>\n        </div>\n        <div class=\"axis-bars-grid\">\n          <div class=\"axis-box\"><div class=\"axis-label\">ROLL (φ)</div><div class=\"axis-val\" id=\"card-roll-val\">--</div></div>\n          <div class=\"axis-box\"><div class=\"axis-label\">PITCH (θ)</div><div class=\"axis-val\" id=\"card-pitch-val\">--</div></div>\n          <div class=\"axis-box\"><div class=\"axis-label\">YAW (ψ)</div><div class=\"axis-val\" id=\"card-yaw-val\">--</div></div>\n        </div>\n        <div class=\"card-footer\">\n          <span>FILTER: COMPLEMENTARY</span>\n          <span id=\"orient-status-footer\">WAITING FOR DATA</span>\n        </div>\n      </article>\n      <!-- 7. GPS -->\n      <article class=\"telem-card\" onclick=\"openSensorModal('gps')\" title=\"Click for high-accuracy GPS ephemeris\">\n        <div class=\"card-top\">\n          <div class=\"card-title\">\n            <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z\"/><circle cx=\"12\" cy=\"10\" r=\"3\"/></svg>\n            GPS / Ephemeris (NEO-M8N)\n          </div>\n          <span class=\"card-badge\" id=\"badge-gps\">NO FIX</span>\n        </div>\n        <div class=\"card-main-val\" style=\"font-size: 1.35rem;\">\n          <span id=\"val-gps-lat\">--</span>\n        </div>\n        <div style=\"font-family: var(--font-mono); font-size: 0.85rem; color: #fff; margin-top: 2px;\" id=\"val-gps-lon\">\n          --\n        </div>\n        <div class=\"card-footer\">\n          <span>ALT: <strong id=\"val-gps-alt\" style=\"color:#fff;\">--</strong></span>\n          <span>SPEED: <strong id=\"val-gps-spd\" style=\"color:var(--cyan-neon);\">--</strong></span>\n        </div>\n      </article>\n    </aside>\n    <footer class=\"mission-footer-log\">\n      <div class=\"terminal-feed\">\n        <span class=\"term-time\" id=\"term-log-time\">[--:--:--]</span>\n        <span class=\"term-text\" id=\"term-log-content\">MISSION GROUND STATION INITIALIZED // READY FOR HARDWARE CONNECTION</span>\n      </div>\n      <div style=\"color: var(--cyan-neon); font-size: 0.65rem; letter-spacing: 1px;\">\n        GROUND COMM: <span id=\"footer-comm-status\" style=\"color:var(--text-muted);\">PORT CLOSED</span>\n      </div>\n    </footer>\n  </main>\n  <div class=\"sensor-modal-overlay\" id=\"sensor-modal\" onclick=\"closeSensorModal(event)\">\n    <div class=\"sensor-modal-window\" onclick=\"event.stopPropagation()\">\n      <div class=\"modal-hdr\">\n        <div class=\"modal-title-group\">\n          <svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"var(--cyan-neon)\" stroke-width=\"2\" id=\"modal-icon\"><circle cx=\"12\" cy=\"12\" r=\"10\"/></svg>\n          <div>\n            <h2 id=\"modal-sensor-name\">SENSOR TELEMETRY ANALYTICS</h2>\n            <div style=\"font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-muted);\" id=\"modal-sensor-subtitle\">SUBSYSTEM TELEMETRY DECODER</div>\n          </div>\n        </div>\n        <button class=\"modal-close-btn\" onclick=\"closeSensorModal(null)\">✕</button>\n      </div>\n      <div class=\"modal-body\">\n        <div class=\"stats-matrix-grid\">\n          <div class=\"stat-chip\">\n            <div class=\"stat-chip-label\">Current Reading</div>\n            <div class=\"stat-chip-value\"><span id=\"m-stat-cur\">--</span> <small id=\"m-unit-1\"></small></div>\n          </div>\n          <div class=\"stat-chip\">\n            <div class=\"stat-chip-label\">Recorded Minimum</div>\n            <div class=\"stat-chip-value\"><span id=\"m-stat-min\">--</span> <small id=\"m-unit-2\"></small></div>\n          </div>\n          <div class=\"stat-chip\">\n            <div class=\"stat-chip-label\">Recorded Maximum</div>\n            <div class=\"stat-chip-value\"><span id=\"m-stat-max\">--</span> <small id=\"m-unit-3\"></small></div>\n          </div>\n          <div class=\"stat-chip\">\n            <div class=\"stat-chip-label\">Rolling Average</div>\n            <div class=\"stat-chip-value\"><span id=\"m-stat-avg\">--</span> <small id=\"m-unit-4\"></small></div>\n          </div>\n        </div>\n        <div class=\"modal-chart-stage\">\n          <canvas id=\"modal-canvas-chart\"></canvas>\n          <div class=\"chart-empty-overlay\" id=\"modal-empty-msg\" style=\"display: none;\">Waiting for telemetry data...</div>\n        </div>\n        <div>\n          <div style=\"font-family: var(--font-mono); font-size: 0.72rem; color: var(--cyan-neon); margin-bottom: 6px; display: flex; justify-content: space-between;\">\n            <span>RECENT RECEIVED PACKETS (VALID LOGS)</span>\n            <span style=\"color: var(--text-muted);\" id=\"modal-log-summary\">NO RECORDS AVAILABLE</span>\n          </div>\n          <div class=\"table-container\">\n            <table class=\"sensor-history-table\">\n              <thead>\n                <tr>\n                  <th>TIMESTAMP</th>\n                  <th>PACKET #</th>\n                  <th>TELEMETRY VALUE</th>\n                  <th>DELTA (Δ)</th>\n                  <th>STATUS</th>\n                </tr>\n              </thead>\n              <tbody id=\"modal-tbody\">\n                <tr><td colspan=\"5\" style=\"text-align:center; padding: 20px; color: var(--text-muted);\">No telemetry packets received yet.</td></tr>\n              </tbody>\n            </table>\n          </div>\n        </div>\n        <div style=\"display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px;\">\n          <button class=\"hud-btn\" onclick=\"exportSensorCSV()\">EXPORT CSV TELEMETRY</button>\n        </div>\n      </div>\n    </div>\n  </div>\n  <div class=\"toast-hud\" id=\"toast-notification\">\n    <svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" id=\"toast-icon\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"/><line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"/></svg>\n    <div id=\"toast-msg\">MISSION GROUND STATION READY</div>\n  </div>\n  <script>\n    /* =========================================================================\n       1. CENTRAL TELEMETRY STORE & STATE MANAGEMENT\n       ========================================================================= */\n    const TelemetryStore = {\n      isDemoMode: false,\n      audioEnabled: true,\n      audioCtx: null,\n      demoIntervalId: null,\n      lastPacketTimestamp: null,\n      lastProcessedPacketNo: null,\n      totalPacketsReceived: 0,\n      activeModalSensor: null,\n      isWireframe: false,\n      serial: {\n        port: null,\n        reader: null,\n        readableStreamClosed: null,\n        isConnected: false,\n        keepReading: false\n      },\n      telemetry: {\n        temp: { current: null, prev: null, history: [], unit: '°C' },\n        humidity: { current: null, prev: null, history: [], unit: '%' },\n        pressure: { current: null, prev: null, history: [], unit: 'hPa' },\n        accel: {\n          x: null, y: null, z: null, totalAcc: null,\n          history: [], unit: 'g'\n        },\n        gyro: {\n          gx: null, gy: null, gz: null, mag: null,\n          history: [], unit: '°/s'\n        },\n        orientation: {\n          roll: null, pitch: null, yaw: null,\n          history: [], unit: '°'\n        },\n        gps: {\n          lat: null, lon: null, alt: null, speed: null, sats: 0, fix: 0,\n          history: [], unit: 'km'\n        },\n        system: {\n          rssi: null, mpuReady: null, mpuWhoAmI: null,\n          history: []\n        }\n      }\n    };\n    const SENSOR_META = {\n      temp: { name: 'THERMAL MANAGEMENT // TEMPERATURE', subtitle: 'BMP280 / DHT11 AMBIENT SENSING', unit: '°C', color: '#00e5ff' },\n      humidity: { name: 'ENVIRONMENT // PAYLOAD BAY HUMIDITY', subtitle: 'DHT11 RELATIVE HUMIDITY', unit: '% RH', color: '#00ffaa' },\n      pressure: { name: 'BAROMETRIC ALTIMETRY & PRESSURE', subtitle: 'BMP280 ABSOLUTE BAROMETER', unit: 'hPa', color: '#ffaa00' },\n      accel: { name: 'INERTIAL MEASUREMENT // ACCELEROMETER', subtitle: 'MPU-6050 3-AXIS (X, Y, Z)', unit: 'g', color: '#00e5ff' },\n      gyro: { name: 'ADCS DYNAMICS // GYROSCOPE RATE', subtitle: 'MPU-6050 3-AXIS RATE (ωX, ωY, ωZ)', unit: '°/s', color: '#ff3366' },\n      orientation: { name: 'ATTITUDE DETERMINATION // EULER ANGLES', subtitle: 'ACCEL/GYRO COMPLEMENTARY FILTER (ROLL, PITCH)', unit: '°', color: '#00e5ff' },\n      gps: { name: 'ORBITAL EPHEMERIS // GNSS RECEIVER', subtitle: 'NEO-M8N GPS SATELLITE TELEMETRY', unit: 'km', color: '#00ffaa' },\n      system: { name: 'OBC LINK BUDGET & SYSTEM HEALTH', subtitle: 'ESP-NOW LORA/WIFI PACKET LINK & BUS', unit: 'dBm', color: '#00e5ff' }\n    };\n    function playTelemetryBeep(freq = 1400, duration = 0.03) {\n      if (!TelemetryStore.audioEnabled) return;\n      try {\n        if (!TelemetryStore.audioCtx) {\n          const AudioContext = window.AudioContext || window.webkitAudioContext;\n          TelemetryStore.audioCtx = new AudioContext();\n        }\n        if (TelemetryStore.audioCtx.state === 'suspended') {\n          TelemetryStore.audioCtx.resume();\n        }\n        const osc = TelemetryStore.audioCtx.createOscillator();\n        const gain = TelemetryStore.audioCtx.createGain();\n        osc.type = 'sine';\n        osc.frequency.setValueAtTime(freq, TelemetryStore.audioCtx.currentTime);\n        gain.gain.setValueAtTime(0.015, TelemetryStore.audioCtx.currentTime);\n        gain.gain.exponentialRampToValueAtTime(0.0001, TelemetryStore.audioCtx.currentTime + duration);\n        osc.connect(gain);\n        gain.connect(TelemetryStore.audioCtx.destination);\n        osc.start();\n        osc.stop(TelemetryStore.audioCtx.currentTime + duration);\n      } catch (e) {}\n    }\n    let overviewChart = null;\n    function initOverviewChart() {\n      const ctx = document.getElementById('canvas-overview-chart').getContext('2d');\n      overviewChart = new Chart(ctx, {\n        type: 'line',\n        data: {\n          labels: [],\n          datasets: [\n            {\n              label: 'Temp (°C)',\n              data: [],\n              borderColor: '#00e5ff',\n              backgroundColor: 'rgba(0, 229, 255, 0.08)',\n              borderWidth: 2,\n              tension: 0.3,\n              fill: true,\n              pointRadius: 2\n            },\n            {\n              label: 'Pressure (hPa / 10)',\n              data: [],\n              borderColor: '#ffaa00',\n              borderWidth: 1.5,\n              borderDash: [3, 3],\n              tension: 0.2,\n              pointRadius: 2\n            }\n          ]\n        },\n        options: {\n          responsive: true,\n          maintainAspectRatio: false,\n          animation: false,\n          interaction: { intersect: false, mode: 'index' },\n          plugins: {\n            legend: {\n              position: 'top', align: 'end',\n              labels: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 10 }, boxWidth: 10 }\n            },\n            tooltip: { backgroundColor: 'rgba(9, 17, 36, 0.95)', titleColor: '#00e5ff', bodyFont: { family: 'JetBrains Mono' } }\n          },\n          scales: {\n            x: {\n              grid: { color: 'rgba(255, 255, 255, 0.04)' },\n              ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 6 }\n            },\n            y: {\n              grid: { color: 'rgba(255, 255, 255, 0.05)' },\n              ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 } }\n            }\n          }\n        }\n      });\n    }\n    function updateOverviewChart(timeLabel, tempVal, pressVal) {\n      if (!overviewChart) return;\n      const emptyMsg = document.getElementById('overview-empty-msg');\n      if (emptyMsg) emptyMsg.style.display = 'none';\n      overviewChart.data.labels.push(timeLabel);\n      overviewChart.data.datasets[0].data.push(tempVal !== null ? tempVal : null);\n      overviewChart.data.datasets[1].data.push(pressVal !== null ? (pressVal / 10).toFixed(2) : null);\n      const fifteenMinutesAgo = Date.now() - (15 * 60 * 1000);\n      while (TelemetryStore.telemetry.temp.history.length > 0 &&\n             TelemetryStore.telemetry.temp.history[0].timestamp < fifteenMinutesAgo) {\n        TelemetryStore.telemetry.temp.history.shift();\n      }\n      if (overviewChart.data.labels.length > 100) {\n        overviewChart.data.labels.shift();\n        overviewChart.data.datasets[0].data.shift();\n        overviewChart.data.datasets[1].data.shift();\n      }\n      overviewChart.update('none');\n      document.getElementById('overview-chart-status').innerText = 'STREAM LIVE';\n    }\n    function processIncomingPacket(raw) {\n      if (!raw || typeof raw !== 'object') return;\n      if (raw.packetNo !== undefined && raw.packetNo !== null) {\n        if (TelemetryStore.lastProcessedPacketNo !== null && raw.packetNo === TelemetryStore.lastProcessedPacketNo) {\n          return;\n        }\n        TelemetryStore.lastProcessedPacketNo = raw.packetNo;\n      }\n      const now = new Date();\n      const timeStr = now.toTimeString().split(' ')[0];\n      const timestamp = now.getTime();\n      TelemetryStore.lastPacketTimestamp = timestamp;\n      TelemetryStore.totalPacketsReceived++;\n      const t = TelemetryStore.telemetry;\n      if (raw.temperature !== undefined && !isNaN(raw.temperature) && raw.temperature > -80 && raw.temperature < 150) {\n        t.temp.prev = t.temp.current !== null ? t.temp.current : raw.temperature;\n        t.temp.current = parseFloat(raw.temperature);\n        t.temp.history.push({ time: timeStr, timestamp, val: t.temp.current, packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived });\n      } else if (raw.bmpTemperature !== undefined && !isNaN(raw.bmpTemperature)) {\n        t.temp.prev = t.temp.current !== null ? t.temp.current : raw.bmpTemperature;\n        t.temp.current = parseFloat(raw.bmpTemperature);\n        t.temp.history.push({ time: timeStr, timestamp, val: t.temp.current, packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived });\n      }\n      if (raw.humidity !== undefined && !isNaN(raw.humidity) && raw.humidity >= 0 && raw.humidity <= 100) {\n        t.humidity.prev = t.humidity.current !== null ? t.humidity.current : raw.humidity;\n        t.humidity.current = parseFloat(raw.humidity);\n        t.humidity.history.push({ time: timeStr, timestamp, val: t.humidity.current, packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived });\n      }\n      if (raw.pressure !== undefined && !isNaN(raw.pressure) && raw.pressure > 300 && raw.pressure < 1300) {\n        t.pressure.prev = t.pressure.current !== null ? t.pressure.current : raw.pressure;\n        t.pressure.current = parseFloat(raw.pressure);\n        t.pressure.history.push({ time: timeStr, timestamp, val: t.pressure.current, packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived });\n      }\n      if (raw.ax !== undefined && raw.ay !== undefined && raw.az !== undefined) {\n        t.accel.x = parseFloat(raw.ax);\n        t.accel.y = parseFloat(raw.ay);\n        t.accel.z = parseFloat(raw.az);\n        t.accel.totalAcc = raw.totalAcc !== undefined ? parseFloat(raw.totalAcc) : Math.sqrt(t.accel.x**2 + t.accel.y**2 + t.accel.z**2);\n        t.accel.history.push({\n          time: timeStr, timestamp, val: t.accel.totalAcc,\n          x: t.accel.x, y: t.accel.y, z: t.accel.z,\n          packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived\n        });\n      }\n      if (raw.gx !== undefined && raw.gy !== undefined && raw.gz !== undefined) {\n        t.gyro.gx = parseFloat(raw.gx);\n        t.gyro.gy = parseFloat(raw.gy);\n        t.gyro.gz = parseFloat(raw.gz);\n        t.gyro.mag = parseFloat(Math.sqrt(t.gyro.gx**2 + t.gyro.gy**2 + t.gyro.gz**2).toFixed(2));\n        t.gyro.history.push({\n          time: timeStr, timestamp, val: t.gyro.mag,\n          gx: t.gyro.gx, gy: t.gyro.gy, gz: t.gyro.gz,\n          packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived\n        });\n      }\n      if (raw.roll !== undefined && raw.pitch !== undefined) {\n        t.orientation.roll = parseFloat(raw.roll);\n        t.orientation.pitch = parseFloat(raw.pitch);\n        t.orientation.yaw = (raw.yaw !== undefined) ? parseFloat(raw.yaw) : (t.orientation.yaw || 0.0);\n        t.orientation.history.push({\n          time: timeStr, timestamp, val: t.orientation.roll,\n          roll: t.orientation.roll, pitch: t.orientation.pitch, yaw: t.orientation.yaw,\n          packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived\n        });\n      }\n      if (raw.gpsFix !== undefined) {\n        t.gps.fix = parseInt(raw.gpsFix);\n        t.gps.sats = raw.satellites !== undefined ? parseInt(raw.satellites) : 0;\n        if (t.gps.fix === 1 && raw.latitude && raw.longitude) {\n          t.gps.lat = parseFloat(raw.latitude);\n          t.gps.lon = parseFloat(raw.longitude);\n          t.gps.alt = raw.altitude !== undefined ? parseFloat(raw.altitude) : (raw.bmpAltitude || 0);\n          t.gps.speed = raw.speed !== undefined ? parseFloat(raw.speed) : 0;\n          t.gps.history.push({ time: timeStr, timestamp, val: t.gps.alt, lat: t.gps.lat, lon: t.gps.lon, packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived });\n        }\n      }\n      if (raw.rssi !== undefined) t.system.rssi = parseInt(raw.rssi);\n      if (raw.mpuReady !== undefined) t.system.mpuReady = parseInt(raw.mpuReady);\n      if (raw.mpuWhoAmI !== undefined) t.system.mpuWhoAmI = raw.mpuWhoAmI;\n      t.system.history.push({ time: timeStr, timestamp, val: t.system.rssi || 0, packetNo: raw.packetNo || TelemetryStore.totalPacketsReceived });\n      const fifteenMinWindow = timestamp - (15 * 60 * 1000);\n      Object.keys(t).forEach(k => {\n        if (t[k].history) {\n          t[k].history = t[k].history.filter(item => item.timestamp >= fifteenMinWindow);\n        }\n      });\n      renderDashboardUI();\n      updateOverviewChart(timeStr, t.temp.current, t.pressure.current);\n      if (TelemetryStore.activeModalSensor) {\n        updateModalViewData();\n      }\n      playTelemetryBeep(1600, 0.025);\n      const pktNo = raw.packetNo || TelemetryStore.totalPacketsReceived;\n      document.getElementById('term-log-time').innerText = `[${timeStr}]`;\n      document.getElementById('term-log-content').innerText = `RX PKT #${pktNo} | T: ${t.temp.current !== null ? t.temp.current + '°C' : '--'} | P: ${t.pressure.current !== null ? t.pressure.current + 'hPa' : '--'} | ROLL: ${t.orientation.roll !== null ? t.orientation.roll + '°' : '--'} | FIX: ${t.gps.fix === 1 ? '3D' : 'NO FIX'}`;\n    }\n    function renderDashboardUI() {\n      const t = TelemetryStore.telemetry;\n      if (t.temp.current !== null) {\n        document.getElementById('val-temp').innerText = t.temp.current.toFixed(1);\n        document.getElementById('prev-temp').innerText = t.temp.prev !== null ? t.temp.prev.toFixed(1) : '--';\n        document.getElementById('badge-temp').innerText = t.temp.current > 45 ? 'HIGH' : (t.temp.current < 0 ? 'LOW' : 'NOMINAL');\n        document.getElementById('badge-temp').className = 'card-badge ' + (t.temp.current > 45 || t.temp.current < 0 ? 'warn' : 'ok');\n        if (t.temp.prev !== null) {\n          const diff = (t.temp.current - t.temp.prev).toFixed(1);\n          const sign = diff >= 0 ? '+' : '';\n          document.getElementById('trend-temp').innerText = `${sign}${diff}°C vs prev`;\n          document.getElementById('trend-temp').className = 'trend-pill ' + (diff > 0 ? 'trend-up' : (diff < 0 ? 'trend-down' : 'trend-steady'));\n        }\n      }\n      if (t.humidity.current !== null) {\n        document.getElementById('val-humidity').innerText = t.humidity.current.toFixed(1);\n        document.getElementById('prev-humidity').innerText = t.humidity.prev !== null ? t.humidity.prev.toFixed(1) : '--';\n        document.getElementById('badge-humidity').innerText = 'NOMINAL';\n        document.getElementById('badge-humidity').className = 'card-badge ok';\n        if (t.humidity.prev !== null) {\n          const diff = (t.humidity.current - t.humidity.prev).toFixed(1);\n          const sign = diff >= 0 ? '+' : '';\n          document.getElementById('trend-humidity').innerText = `${sign}${diff}% vs prev`;\n          document.getElementById('trend-humidity').className = 'trend-pill ' + (diff > 0 ? 'trend-up' : (diff < 0 ? 'trend-down' : 'trend-steady'));\n        }\n      }\n      if (t.pressure.current !== null) {\n        document.getElementById('val-pressure').innerText = t.pressure.current.toFixed(1);\n        document.getElementById('prev-pressure').innerText = t.pressure.prev !== null ? t.pressure.prev.toFixed(1) : '--';\n        document.getElementById('badge-pressure').innerText = 'VALID';\n        document.getElementById('badge-pressure').className = 'card-badge ok';\n        if (t.pressure.prev !== null) {\n          const diff = (t.pressure.current - t.pressure.prev).toFixed(2);\n          const sign = diff >= 0 ? '+' : '';\n          document.getElementById('trend-pressure').innerText = `${sign}${diff} hPa vs prev`;\n        }\n      }\n      if (t.accel.totalAcc !== null) {\n        document.getElementById('val-accel-mag').innerText = t.accel.totalAcc.toFixed(3);\n        document.getElementById('val-acc-x').innerText = (t.accel.x >= 0 ? '+' : '') + t.accel.x.toFixed(2);\n        document.getElementById('val-acc-y').innerText = (t.accel.y >= 0 ? '+' : '') + t.accel.y.toFixed(2);\n        document.getElementById('val-acc-z').innerText = (t.accel.z >= 0 ? '+' : '') + t.accel.z.toFixed(2);\n        document.getElementById('bar-acc-x').style.width = Math.min(100, Math.max(0, (t.accel.x + 2) * 25)) + '%';\n        document.getElementById('bar-acc-y').style.width = Math.min(100, Math.max(0, (t.accel.y + 2) * 25)) + '%';\n        document.getElementById('bar-acc-z').style.width = Math.min(100, Math.max(0, (t.accel.z + 2) * 25)) + '%';\n        document.getElementById('badge-accel').innerText = 'ONLINE';\n        document.getElementById('badge-accel').className = 'card-badge ok';\n        document.getElementById('acc-status-footer').innerText = 'READING REAL-TIME G';\n      }\n      if (t.gyro.mag !== null) {\n        document.getElementById('val-gyro-mag').innerText = t.gyro.mag.toFixed(2);\n        document.getElementById('val-gyr-x').innerText = (t.gyro.gx >= 0 ? '+' : '') + t.gyro.gx.toFixed(1);\n        document.getElementById('val-gyr-y').innerText = (t.gyro.gy >= 0 ? '+' : '') + t.gyro.gy.toFixed(1);\n        document.getElementById('val-gyr-z').innerText = (t.gyro.gz >= 0 ? '+' : '') + t.gyro.gz.toFixed(1);\n        document.getElementById('bar-gyr-x').style.width = Math.min(100, Math.max(0, (Math.abs(t.gyro.gx) / 50) * 100)) + '%';\n        document.getElementById('bar-gyr-y').style.width = Math.min(100, Math.max(0, (Math.abs(t.gyro.gy) / 50) * 100)) + '%';\n        document.getElementById('bar-gyr-z').style.width = Math.min(100, Math.max(0, (Math.abs(t.gyro.gz) / 50) * 100)) + '%';\n        document.getElementById('badge-gyro').innerText = 'ONLINE';\n        document.getElementById('badge-gyro').className = 'card-badge ok';\n        document.getElementById('gyro-status-footer').innerText = 'RATES SYNCHRONIZED';\n      }\n      if (t.orientation.roll !== null && t.orientation.pitch !== null) {\n        document.getElementById('card-primary-orient').innerText = `R ${t.orientation.roll >= 0 ? '+' : ''}${t.orientation.roll.toFixed(1)}°`;\n        document.getElementById('card-secondary-orient').innerText = `P ${t.orientation.pitch >= 0 ? '+' : ''}${t.orientation.pitch.toFixed(1)}°`;\n        document.getElementById('card-roll-val').innerText = `${t.orientation.roll >= 0 ? '+' : ''}${t.orientation.roll.toFixed(1)}°`;\n        document.getElementById('card-pitch-val').innerText = `${t.orientation.pitch >= 0 ? '+' : ''}${t.orientation.pitch.toFixed(1)}°`;\n        document.getElementById('card-yaw-val').innerText = t.orientation.yaw !== null ? `${t.orientation.yaw.toFixed(1)}°` : '--';\n        document.getElementById('hud-roll').innerText = `${t.orientation.roll >= 0 ? '+' : ''}${t.orientation.roll.toFixed(1)}°`;\n        document.getElementById('hud-pitch').innerText = `${t.orientation.pitch >= 0 ? '+' : ''}${t.orientation.pitch.toFixed(1)}°`;\n        document.getElementById('hud-yaw').innerText = t.orientation.yaw !== null ? `${t.orientation.yaw.toFixed(1)}°` : '--';\n        document.getElementById('badge-orient').innerText = 'TRACKING';\n        document.getElementById('badge-orient').className = 'card-badge ok';\n        document.getElementById('orient-status-footer').innerText = 'FUSED FILTER STABLE';\n        document.getElementById('hud-att-status').innerText = 'TRACKING HARDWARE ATTITUDE';\n      }\n      if (t.gps.fix === 1 && t.gps.lat !== null && t.gps.lon !== null) {\n        document.getElementById('val-gps-lat').innerText = `${Math.abs(t.gps.lat).toFixed(4)}° ${t.gps.lat >= 0 ? 'N' : 'S'}`;\n        document.getElementById('val-gps-lon').innerText = `${Math.abs(t.gps.lon).toFixed(4)}° ${t.gps.lon >= 0 ? 'E' : 'W'}`;\n        document.getElementById('val-gps-alt').innerText = `${t.gps.alt.toFixed(1)} m`;\n        document.getElementById('val-gps-spd').innerText = `${t.gps.speed.toFixed(1)} km/h`;\n        document.getElementById('badge-gps').innerText = '3D FIX';\n        document.getElementById('badge-gps').className = 'card-badge ok';\n        document.getElementById('map-sats-count').innerText = `SATS: ${t.gps.sats} (3D FIX)`;\n        document.getElementById('map-sats-count').style.color = 'var(--status-ok)';\n        document.getElementById('val-fix-short').innerText = '3D FIX';\n        document.getElementById('val-fix-short').style.color = 'var(--status-ok)';\n        document.getElementById('led-gps').className = 'subsystem-led ok';\n      } else {\n        document.getElementById('val-gps-lat').innerText = 'NO GPS FIX';\n        document.getElementById('val-gps-lon').innerText = 'WAITING FOR SATELLITES';\n        document.getElementById('val-gps-alt').innerText = '--';\n        document.getElementById('val-gps-spd').innerText = '--';\n        document.getElementById('badge-gps').innerText = 'NO FIX';\n        document.getElementById('badge-gps').className = 'card-badge';\n        document.getElementById('map-sats-count').innerText = `SATS: ${t.gps.sats} (NO FIX)`;\n        document.getElementById('map-sats-count').style.color = 'var(--text-muted)';\n        document.getElementById('val-fix-short').innerText = 'NO FIX';\n        document.getElementById('val-fix-short').style.color = 'var(--text-muted)';\n        document.getElementById('led-gps').className = 'subsystem-led';\n      }\n      if (t.system.rssi !== null) {\n        document.getElementById('val-rssi').innerText = t.system.rssi;\n      }\n      if (t.system.mpuReady === 1) {\n        document.getElementById('led-mpu').className = 'subsystem-led ok';\n      }\n      if (t.temp.current !== null) {\n        document.getElementById('led-dht').className = 'subsystem-led ok';\n      }\n      if (t.pressure.current !== null) {\n        document.getElementById('led-bmp').className = 'subsystem-led ok';\n      }\n      if (t.system.mpuWhoAmI) {\n        document.getElementById('hud-whoami').innerText = `0x${parseInt(t.system.mpuWhoAmI).toString(16).toUpperCase()}`;\n      }\n      document.getElementById('val-pkt-count').innerText = TelemetryStore.totalPacketsReceived.toLocaleString();\n      if (TelemetryStore.lastPacketTimestamp) {\n        const dt = Math.round((Date.now() - TelemetryStore.lastPacketTimestamp) / 1000);\n        document.getElementById('val-last-rx').innerText = dt < 3 ? 'JUST NOW' : `${dt}s AGO`;\n      }\n    }\n    /* =========================================================================\n       3. WEB SERIAL API HARDWARE INTEGRATION\n       ========================================================================= */\n    async function connectSerial() {\n      if (!(\"serial\" in navigator)) {\n        showToast(\"Web Serial API not supported in this browser. Use Chrome, Edge, or Opera.\", true);\n        return;\n      }\n      try {\n        const port = await navigator.serial.requestPort();\n        await port.open({ baudRate: 115200 });\n        TelemetryStore.serial.port = port;\n        TelemetryStore.serial.isConnected = true;\n        TelemetryStore.serial.keepReading = true;\n        updateSerialConnectionStatus(true, \"CONNECTED\");\n        showToast(\"ESP32 SERIAL PORT OPENED [115200 BAUD]\");\n        readSerialStream();\n      } catch (err) {\n        if (err.name !== 'NotFoundError') {\n          showToast(\"Serial Connection Failed: \" + err.message, true);\n        }\n      }\n    }\n    async function disconnectSerial() {\n      TelemetryStore.serial.keepReading = false;\n      if (TelemetryStore.serial.reader) {\n        try { await TelemetryStore.serial.reader.cancel(); } catch (e) {}\n      }\n      if (TelemetryStore.serial.readableStreamClosed) {\n        try { await TelemetryStore.serial.readableStreamClosed.catch(() => {}); } catch (e) {}\n      }\n      if (TelemetryStore.serial.port) {\n        try { await TelemetryStore.serial.port.close(); } catch (e) {}\n        TelemetryStore.serial.port = null;\n      }\n      TelemetryStore.serial.isConnected = false;\n      updateSerialConnectionStatus(false, \"DISCONNECTED\");\n      showToast(\"ESP32 SERIAL DISCONNECTED\");\n    }\n    async function readSerialStream() {\n      const port = TelemetryStore.serial.port;\n      if (!port || !port.readable) return;\n      const textDecoder = new TextDecoderStream();\n      TelemetryStore.serial.readableStreamClosed = port.readable.pipeTo(textDecoder.writable);\n      TelemetryStore.serial.reader = textDecoder.readable.getReader();\n      const reader = TelemetryStore.serial.reader;\n      let lineBuffer = '';\n      try {\n        while (TelemetryStore.serial.keepReading) {\n          const { value, done } = await reader.read();\n          if (done) break;\n          if (value) {\n            lineBuffer += value;\n            const lines = lineBuffer.split('\\n');\n            lineBuffer = lines.pop();\n            for (const line of lines) {\n              const trimmed = line.trim();\n              if (trimmed.startsWith('{') && trimmed.endsWith('}')) {\n                try {\n                  const parsed = JSON.parse(trimmed);\n                  processIncomingPacket(parsed);\n                } catch (jsonErr) {}\n              }\n            }\n          }\n        }\n      } catch (readErr) {\n      } finally {\n        try { reader.releaseLock(); } catch (e) {}\n      }\n    }\n    function updateSerialConnectionStatus(connected, text) {\n      const btn = document.getElementById('btn-serial-connect');\n      const espBeacon = document.getElementById('status-esp-beacon');\n      const espText = document.getElementById('status-esp-text');\n      const footerComm = document.getElementById('footer-comm-status');\n      if (connected) {\n        btn.classList.add('conn-active');\n        document.getElementById('serial-btn-label').innerText = 'DISCONNECT ESP32';\n        espBeacon.className = 'beacon-dot ok';\n        espText.innerText = 'CONNECTED';\n        espText.style.color = 'var(--status-ok)';\n        footerComm.innerText = 'SERIAL USB [115200] ACTIVE';\n        footerComm.style.color = 'var(--status-ok)';\n        document.getElementById('badge-system').innerText = 'LISTENING';\n      } else {\n        btn.classList.remove('conn-active');\n        document.getElementById('serial-btn-label').innerText = 'CONNECT ESP32';\n        espBeacon.className = 'beacon-dot';\n        espText.innerText = 'DISCONNECTED';\n        espText.style.color = 'var(--text-muted)';\n        footerComm.innerText = 'PORT CLOSED';\n        footerComm.style.color = 'var(--text-muted)';\n        document.getElementById('status-telem-beacon').className = 'beacon-dot';\n        document.getElementById('status-telem-rate').innerText = 'NO DATA';\n        document.getElementById('status-telem-rate').style.color = 'var(--text-muted)';\n        document.getElementById('badge-system').innerText = 'STANDBY';\n      }\n    }\n    setInterval(() => {\n      const telemBeacon = document.getElementById('status-telem-beacon');\n      const telemRate = document.getElementById('status-telem-rate');\n      if (!TelemetryStore.lastPacketTimestamp) {\n        telemBeacon.className = 'beacon-dot';\n        telemRate.innerText = 'NO DATA';\n        telemRate.style.color = 'var(--text-muted)';\n        return;\n      }\n      const ageMs = Date.now() - TelemetryStore.lastPacketTimestamp;\n      if (ageMs < 2500) {\n        telemBeacon.className = 'beacon-dot ok';\n        telemRate.innerText = 'TELEMETRY LIVE';\n        telemRate.style.color = 'var(--status-ok)';\n      } else if (ageMs < 7000) {\n        telemBeacon.className = 'beacon-dot warn';\n        telemRate.innerText = 'SIGNAL WEAK';\n        telemRate.style.color = 'var(--status-warn)';\n      } else {\n        telemBeacon.className = 'beacon-dot crit';\n        telemRate.innerText = 'NO TELEMETRY';\n        telemRate.style.color = 'var(--status-crit)';\n      }\n    }, 1000);\n    /* =========================================================================\n       4. DEMO MODE & HARDWARE TOGGLE\n       ========================================================================= */\n    function toggleDemoMode() {\n      TelemetryStore.isDemoMode = !TelemetryStore.isDemoMode;\n      const btn = document.getElementById('btn-toggle-demo');\n      const modePill = document.getElementById('status-mode-pill');\n      if (TelemetryStore.isDemoMode) {\n        btn.classList.add('mode-demo');\n        document.getElementById('demo-btn-label').innerText = 'DEMO MODE: ON';\n        modePill.innerHTML = '<strong style=\"color:var(--status-warn);\">DEMO MODE (SIMULATED)</strong>';\n        showToast('DEMO MODE ENABLED \u2014 SYNTHETIC TELEMETRY ACTIVE');\n        startDemoTelemetry();\n      } else {\n        btn.classList.remove('mode-demo');\n        document.getElementById('demo-btn-label').innerText = 'DEMO MODE: OFF';\n        modePill.innerHTML = 'MODE: <strong>LIVE HARDWARE</strong>';\n        showToast('RETURNED TO LIVE HARDWARE MODE \u2014 SIMULATION HALTED');\n        stopDemoTelemetry();\n      }\n    }\n    function startDemoTelemetry() {\n      if (TelemetryStore.demoIntervalId) clearInterval(TelemetryStore.demoIntervalId);\n      let simPacket = TelemetryStore.totalPacketsReceived || 100;\n      let simAngle = 0;\n      TelemetryStore.demoIntervalId = setInterval(() => {\n        if (!TelemetryStore.isDemoMode) return;\n        simPacket++;\n        simAngle += 0.08;\n        const synthetic = {\n          packetNo: simPacket,\n          temperature: +(24.2 + Math.sin(simAngle * 0.3) * 3.5).toFixed(2),\n          humidity: +(38.0 + Math.cos(simAngle * 0.2) * 5.0).toFixed(1),\n          pressure: +(1013.25 + Math.sin(simAngle * 0.1) * 2.0).toFixed(2),\n          ax: +(Math.sin(simAngle) * 0.2).toFixed(3),\n          ay: +(Math.cos(simAngle) * 0.2).toFixed(3),\n          az: +(0.98 + Math.sin(simAngle * 0.5) * 0.04).toFixed(3),\n          gx: +(Math.sin(simAngle * 2) * 4.5).toFixed(2),\n          gy: +(Math.cos(simAngle * 2) * 3.8).toFixed(2),\n          gz: +(Math.sin(simAngle) * 2.1).toFixed(2),\n          roll: +(Math.sin(simAngle) * 15.0).toFixed(2),\n          pitch: +(Math.cos(simAngle * 0.8) * 12.0).toFixed(2),\n          yaw: +((simAngle * 25) % 360).toFixed(2),\n          latitude: +(28.5721 + Math.sin(simAngle * 0.05) * 0.1).toFixed(6),\n          longitude: +(-80.6480 + (simAngle * 0.02) % 1.0).toFixed(6),\n          altitude: +(412.5 + Math.sin(simAngle * 0.1) * 2.5).toFixed(1),\n          speed: 7.66,\n          satellites: 9,\n          gpsFix: 1,\n          mpuReady: 1,\n          mpuAddress: 104,\n          mpuWhoAmI: 104,\n          rssi: -72\n        };\n        processIncomingPacket(synthetic);\n      }, 1000);\n    }\n    function stopDemoTelemetry() {\n      if (TelemetryStore.demoIntervalId) {\n        clearInterval(TelemetryStore.demoIntervalId);\n        TelemetryStore.demoIntervalId = null;\n      }\n    }\n    /* =========================================================================\n       5. THREE.JS 3D CUBESAT RENDERING (NO RANDOM SPIN)\n       ========================================================================= */\n    let scene, camera, renderer, controls, cubeSatGroup, earthMesh;\n    function initThreeCubeSat() {\n      const container = document.querySelector('.viewport-3d-box');\n      const canvas = document.getElementById('webgl-cubesat');\n      const width = container.clientWidth;\n      const height = container.clientHeight - 42;\n      scene = new THREE.Scene();\n      camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);\n      camera.position.set(3.2, 2.4, 4.0);\n      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });\n      renderer.setSize(width, height);\n      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));\n      controls = new THREE.OrbitControls(camera, renderer.domElement);\n      controls.enableDamping = true;\n      controls.dampingFactor = 0.05;\n      controls.maxDistance = 14;\n      controls.minDistance = 1.5;\n      const ambientLight = new THREE.AmbientLight(0xddeeff, 0.7);\n      scene.add(ambientLight);\n      const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);\n      sunLight.position.set(10, 15, 8);\n      scene.add(sunLight);\n      const earthGlowLight = new THREE.DirectionalLight(0x0077ff, 0.8);\n      earthGlowLight.position.set(-8, -10, -5);\n      scene.add(earthGlowLight);\n      const starGeo = new THREE.BufferGeometry();\n      const starPositions = new Float32Array(800 * 3);\n      for (let i = 0; i < 800 * 3; i++) {\n        starPositions[i] = (Math.random() - 0.5) * 80;\n      }\n      starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));\n      const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0x90b5ff, size: 0.15, transparent: true, opacity: 0.8 }));\n      scene.add(stars);\n      const earthGeo = new THREE.SphereGeometry(18, 48, 48);\n      earthMesh = new THREE.Mesh(earthGeo, new THREE.MeshBasicMaterial({ color: 0x051a3a, wireframe: true, transparent: true, opacity: 0.18 }));\n      earthMesh.position.set(0, -22, 0);\n      scene.add(earthMesh);\n      cubeSatGroup = new THREE.Group();\n      const chassis = new THREE.Mesh(\n        new THREE.BoxGeometry(1.4, 1.4, 1.4),\n        new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.9, roughness: 0.25 })\n      );\n      cubeSatGroup.add(chassis);\n      const panelMat = new THREE.MeshStandardMaterial({ color: 0x0c274c, metalness: 0.85, roughness: 0.15, emissive: 0x051329 });\n      const solarFaceGeo = new THREE.PlaneGeometry(1.25, 1.25);\n      const pFront = new THREE.Mesh(solarFaceGeo, panelMat); pFront.position.z = 0.705; cubeSatGroup.add(pFront);\n      const pBack = new THREE.Mesh(solarFaceGeo, panelMat); pBack.position.z = -0.705; pBack.rotation.y = Math.PI; cubeSatGroup.add(pBack);\n      const pRight = new THREE.Mesh(solarFaceGeo, panelMat); pRight.position.x = 0.705; pRight.rotation.y = Math.PI / 2; cubeSatGroup.add(pRight);\n      const pLeft = new THREE.Mesh(solarFaceGeo, panelMat); pLeft.position.x = -0.705; pLeft.rotation.y = -Math.PI / 2; cubeSatGroup.add(pLeft);\n      const pTop = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1.25), new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.95, roughness: 0.3 }));\n      pTop.position.y = 0.705; pTop.rotation.x = -Math.PI / 2; cubeSatGroup.add(pTop);\n      const lensMount = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.15, 32), new THREE.MeshStandardMaterial({ color: 0x030712, metalness: 0.9, roughness: 0.1 }));\n      lensMount.position.y = -0.72; cubeSatGroup.add(lensMount);\n      const lensGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.16, 32), new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x0088cc, roughness: 0 }));\n      lensGlass.position.y = -0.725; cubeSatGroup.add(lensGlass);\n      const antMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, metalness: 0.95, roughness: 0.1 });\n      for (let i = 0; i < 4; i++) {\n        const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.8, 8), antMat);\n        const angle = (i * Math.PI) / 2 + Math.PI / 4;\n        ant.position.set(Math.cos(angle) * 0.72, 0.9, Math.sin(angle) * 0.72);\n        ant.rotation.z = (Math.cos(angle) > 0 ? -1 : 1) * 0.25;\n        ant.rotation.x = (Math.sin(angle) > 0 ? 1 : -1) * 0.25;\n        cubeSatGroup.add(ant);\n      }\n      cubeSatGroup.add(new THREE.AxesHelper(1.8));\n      scene.add(cubeSatGroup);\n      window.addEventListener('resize', onThreeResize);\n      animateThree();\n    }\n    function onThreeResize() {\n      const container = document.querySelector('.viewport-3d-box');\n      if (!container || !renderer) return;\n      camera.aspect = container.clientWidth / (container.clientHeight - 42);\n      camera.updateProjectionMatrix();\n      renderer.setSize(container.clientWidth, container.clientHeight - 42);\n    }\n    function animateThree() {\n      requestAnimationFrame(animateThree);\n      const orient = TelemetryStore.telemetry.orientation;\n      if (orient.roll !== null && orient.pitch !== null) {\n        const targetR = (orient.roll * Math.PI) / 180;\n        const targetP = (orient.pitch * Math.PI) / 180;\n        const targetY = orient.yaw !== null ? (orient.yaw * Math.PI) / 180 : 0;\n        cubeSatGroup.rotation.x += (targetP - cubeSatGroup.rotation.x) * 0.15;\n        cubeSatGroup.rotation.y += (targetY - cubeSatGroup.rotation.y) * 0.15;\n        cubeSatGroup.rotation.z += (targetR - cubeSatGroup.rotation.z) * 0.15;\n      }\n      controls.update();\n      renderer.render(scene, camera);\n    }\n    /* =========================================================================\n       6. GROUND TRACK 2D CANVAS (ONLY REAL GPS)\n       ========================================================================= */\n    function initGroundTrackCanvas() {\n      const canvas = document.getElementById('groundtrack-canvas');\n      const ctx = canvas.getContext('2d');\n      function resize() {\n        canvas.width = canvas.parentElement.clientWidth;\n        canvas.height = canvas.parentElement.clientHeight - 38;\n      }\n      resize();\n      window.addEventListener('resize', resize);\n      function draw() {\n        ctx.clearRect(0, 0, canvas.width, canvas.height);\n        const w = canvas.width, h = canvas.height;\n        ctx.strokeStyle = 'rgba(0, 229, 255, 0.08)';\n        ctx.lineWidth = 1;\n        for (let x = 0; x < w; x += w / 12) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }\n        for (let y = 0; y < h; y += h / 6) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }\n        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';\n        ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();\n        ctx.strokeStyle = 'rgba(0, 229, 255, 0.25)';\n        ctx.fillStyle = 'rgba(0, 229, 255, 0.03)';\n        ctx.beginPath();\n        ctx.moveTo(w * 0.12, h * 0.2); ctx.lineTo(w * 0.28, h * 0.18); ctx.lineTo(w * 0.25, h * 0.45); ctx.lineTo(w * 0.10, h * 0.35); ctx.closePath();\n        ctx.stroke(); ctx.fill();\n        ctx.beginPath();\n        ctx.moveTo(w * 0.45, h * 0.22); ctx.lineTo(w * 0.58, h * 0.20); ctx.lineTo(w * 0.55, h * 0.45); ctx.lineTo(w * 0.48, h * 0.82); ctx.closePath();\n        ctx.stroke(); ctx.fill();\n        ctx.beginPath();\n        ctx.moveTo(w * 0.62, h * 0.18); ctx.lineTo(w * 0.88, h * 0.22); ctx.lineTo(w * 0.68, h * 0.50); ctx.closePath();\n        ctx.stroke(); ctx.fill();\n        const gps = TelemetryStore.telemetry.gps;\n        if (gps.fix === 1 && gps.lat !== null && gps.lon !== null) {\n          const satX = ((gps.lon + 180) / 360) * w;\n          const satY = ((90 - gps.lat) / 180) * h;\n          ctx.beginPath(); ctx.arc(satX, satY, 20, 0, Math.PI * 2);\n          ctx.fillStyle = 'rgba(0, 229, 255, 0.15)'; ctx.fill();\n          ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 1; ctx.stroke();\n          ctx.beginPath(); ctx.arc(satX, satY, 4, 0, Math.PI * 2);\n          ctx.fillStyle = '#00ffaa'; ctx.fill();\n          ctx.fillStyle = '#fff'; ctx.font = '9px \"JetBrains Mono\"';\n          ctx.fillText(`ASTRA-2.0 [${gps.lat.toFixed(2)}, ${gps.lon.toFixed(2)}]`, satX + 8, satY - 6);\n        } else {\n          ctx.fillStyle = 'rgba(139, 155, 180, 0.5)';\n          ctx.font = '11px \"JetBrains Mono\"';\n          ctx.textAlign = 'center';\n          ctx.fillText('AWAITING GNSS SATELLITE FIX...', w / 2, h / 2);\n          ctx.textAlign = 'start';\n        }\n        requestAnimationFrame(draw);\n      }\n      draw();\n    }\n    /* =========================================================================\n       7. CLICKABLE SENSOR MODAL DEEP-DIVE SYSTEM\n       ========================================================================= */\n    let modalChart = null;\n    function openSensorModal(sensorKey) {\n      TelemetryStore.activeModalSensor = sensorKey;\n      const meta = SENSOR_META[sensorKey];\n      if (!meta) return;\n      const modal = document.getElementById('sensor-modal');\n      document.getElementById('modal-sensor-name').innerText = meta.name;\n      document.getElementById('modal-sensor-subtitle').innerText = meta.subtitle;\n      for (let i = 1; i <= 4; i++) {\n        document.getElementById(`m-unit-${i}`).innerText = meta.unit;\n      }\n      updateModalViewData();\n      modal.classList.add('active');\n    }\n    function closeSensorModal(e) {\n      if (e && e.target !== e.currentTarget && !e.target.classList.contains('modal-close-btn')) return;\n      document.getElementById('sensor-modal').classList.remove('active');\n      TelemetryStore.activeModalSensor = null;\n      if (modalChart) {\n        modalChart.destroy();\n        modalChart = null;\n      }\n    }\n    function updateModalViewData() {\n      const key = TelemetryStore.activeModalSensor;\n      if (!key) return;\n      const meta = SENSOR_META[key];\n      const sensorObj = TelemetryStore.telemetry[key];\n      const history = sensorObj.history || [];\n      const emptyMsg = document.getElementById('modal-empty-msg');\n      if (history.length === 0) {\n        document.getElementById('m-stat-cur').innerText = '--';\n        document.getElementById('m-stat-min').innerText = '--';\n        document.getElementById('m-stat-max').innerText = '--';\n        document.getElementById('m-stat-avg').innerText = '--';\n        document.getElementById('modal-log-summary').innerText = '0 SAMPLES RECORDED';\n        document.getElementById('modal-tbody').innerHTML = '<tr><td colspan=\"5\" style=\"text-align:center; padding: 20px; color: var(--text-muted);\">Waiting for telemetry data...</td></tr>';\n        if (emptyMsg) emptyMsg.style.display = 'flex';\n        if (modalChart) { modalChart.destroy(); modalChart = null; }\n        return;\n      }\n      if (emptyMsg) emptyMsg.style.display = 'none';\n      const values = history.map(h => h.val).filter(v => v !== null && !isNaN(v));\n      if (values.length > 0) {\n        const cur = values[values.length - 1];\n        const min = Math.min(...values).toFixed(2);\n        const max = Math.max(...values).toFixed(2);\n        const avg = (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2);\n        document.getElementById('m-stat-cur').innerText = typeof cur === 'number' ? cur.toFixed(2) : cur;\n        document.getElementById('m-stat-min').innerText = min;\n        document.getElementById('m-stat-max').innerText = max;\n        document.getElementById('m-stat-avg').innerText = avg;\n      }\n      const ctx = document.getElementById('modal-canvas-chart').getContext('2d');\n      const timeLabels = history.map(h => h.time);\n      let datasets = [];\n      if (key === 'accel') {\n        datasets = [\n          { label: 'Accel X (g)', data: history.map(h => h.x), borderColor: '#00e5ff', borderWidth: 1.5, tension: 0.2, pointRadius: 2 },\n          { label: 'Accel Y (g)', data: history.map(h => h.y), borderColor: '#00ffaa', borderWidth: 1.5, tension: 0.2, pointRadius: 2 },\n          { label: 'Accel Z (g)', data: history.map(h => h.z), borderColor: '#ffaa00', borderWidth: 1.5, tension: 0.2, pointRadius: 2 }\n        ];\n      } else if (key === 'gyro') {\n        datasets = [\n          { label: 'ωX (°/s)', data: history.map(h => h.gx), borderColor: '#00e5ff', borderWidth: 1.5, tension: 0.2, pointRadius: 2 },\n          { label: 'ωY (°/s)', data: history.map(h => h.gy), borderColor: '#00ffaa', borderWidth: 1.5, tension: 0.2, pointRadius: 2 },\n          { label: 'ωZ (°/s)', data: history.map(h => h.gz), borderColor: '#ffaa00', borderWidth: 1.5, tension: 0.2, pointRadius: 2 }\n        ];\n      } else if (key === 'orientation') {\n        datasets = [\n          { label: 'Roll (°)', data: history.map(h => h.roll), borderColor: '#00e5ff', borderWidth: 1.5, tension: 0.2, pointRadius: 2 },\n          { label: 'Pitch (°)', data: history.map(h => h.pitch), borderColor: '#00ffaa', borderWidth: 1.5, tension: 0.2, pointRadius: 2 }\n        ];\n      } else {\n        datasets = [{\n          label: `${meta.name} (${meta.unit})`,\n          data: values,\n          borderColor: meta.color,\n          backgroundColor: `${meta.color}15`,\n          borderWidth: 2,\n          fill: true,\n          pointRadius: 2,\n          tension: 0.3\n        }];\n      }\n      if (modalChart) { modalChart.destroy(); }\n      modalChart = new Chart(ctx, {\n        type: 'line',\n        data: { labels: timeLabels, datasets },\n        options: {\n          responsive: true, maintainAspectRatio: false,\n          plugins: {\n            legend: { labels: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 10 } } },\n            tooltip: { backgroundColor: '#030712', titleColor: meta.color, bodyFont: { family: 'JetBrains Mono' } }\n          },\n          scales: {\n            x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 8 } },\n            y: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8b9bb4', font: { family: 'JetBrains Mono', size: 9 } } }\n          }\n        }\n      });\n      document.getElementById('modal-log-summary').innerText = `${history.length} SAMPLES IN 15-MIN BUFFER`;\n      const tbody = document.getElementById('modal-tbody');\n      tbody.innerHTML = '';\n      const recent = [...history].reverse().slice(0, 8);\n      recent.forEach((row, idx) => {\n        const tr = document.createElement('tr');\n        let valStr = '';\n        if (key === 'accel') valStr = `X:${row.x} Y:${row.y} Z:${row.z}`;\n        else if (key === 'gyro') valStr = `ωX:${row.gx} ωY:${row.gy} ωZ:${row.gz}`;\n        else if (key === 'orientation') valStr = `R:${row.roll}° P:${row.pitch}°`;\n        else valStr = `${row.val} ${meta.unit}`;\n        const delta = (idx < recent.length - 1 && typeof row.val === 'number' && typeof recent[idx + 1].val === 'number')\n          ? (row.val - recent[idx + 1].val).toFixed(2)\n          : '--';\n        tr.innerHTML = `\n          <td>${row.time} UTC</td>\n          <td>#${row.packetNo || '--'}</td>\n          <td style=\"color:#fff; font-weight:700;\">${valStr}</td>\n          <td style=\"color:${delta !== '--' && delta >= 0 ? '#00ffaa' : '#00e5ff'}\">${delta !== '--' && delta > 0 ? '+' + delta : delta}</td>\n          <td><span style=\"color:#00ffaa;\">VALID</span></td>\n        `;\n        tbody.appendChild(tr);\n      });\n    }\n    function exportSensorCSV() {\n      const key = TelemetryStore.activeModalSensor;\n      if (!key) return;\n      const history = TelemetryStore.telemetry[key].history || [];\n      if (history.length === 0) {\n        showToast(\"NO TELEMETRY DATA AVAILABLE TO EXPORT\", true);\n        return;\n      }\n      let csv = 'TIMESTAMP_UTC,PACKET_NO,VAL,UNIT\\n';\n      history.forEach(h => {\n        csv += `${h.time},${h.packetNo || ''},${h.val},${SENSOR_META[key].unit}\\n`;\n      });\n      const blob = new Blob([csv], { type: 'text/csv' });\n      const url = URL.createObjectURL(blob);\n      const a = document.createElement('a');\n      a.href = url;\n      a.download = `ASTRA_${key.toUpperCase()}_TELEMETRY.csv`;\n      a.click();\n      URL.revokeObjectURL(url);\n      showToast(`EXPORTED ${history.length} SAMPLES TO CSV`);\n    }\n    /* =========================================================================\n       8. TOAST NOTIFICATIONS & TIMEKEEPING\n       ========================================================================= */\n    function showToast(msg, isCrit = false) {\n      const toast = document.getElementById('toast-notification');\n      document.getElementById('toast-msg').innerText = msg;\n      toast.className = 'toast-hud' + (isCrit ? ' crit' : '');\n      toast.classList.add('show');\n      setTimeout(() => toast.classList.remove('show'), 3800);\n    }\n    let metStart = Date.now();\n    setInterval(() => {\n      const now = new Date();\n      document.getElementById('clock-utc').innerText = now.toTimeString().split(' ')[0] + ' UTC';\n      const elapsedSec = Math.floor((now.getTime() - metStart) / 1000);\n      const d = Math.floor(elapsedSec / 86400);\n      const h = Math.floor((elapsedSec % 86400) / 3600);\n      const m = Math.floor((elapsedSec % 3600) / 60);\n      const s = elapsedSec % 60;\n      const pad = n => String(n).padStart(2, '0');\n      document.getElementById('clock-met').innerText = `T+${String(d).padStart(3, '0')}:${pad(h)}:${pad(m)}:${pad(s)}`;\n    }, 1000);\n    /* =========================================================================\n       9. EVENT LISTENERS & INITIALIZATION\n       ========================================================================= */\n    document.getElementById('btn-serial-connect').addEventListener('click', () => {\n      if (!TelemetryStore.serial.isConnected) connectSerial();\n      else disconnectSerial();\n    });\n    document.getElementById('btn-toggle-demo').addEventListener('click', toggleDemoMode);\n    document.getElementById('btn-audio-toggle').addEventListener('click', function() {\n      TelemetryStore.audioEnabled = !TelemetryStore.audioEnabled;\n      this.classList.toggle('active', TelemetryStore.audioEnabled);\n      document.getElementById('audio-btn-label').innerText = TelemetryStore.audioEnabled ? 'AUDIO: ON' : 'AUDIO: OFF';\n      showToast(TelemetryStore.audioEnabled ? 'AUDIO TELEMETRY BEEP ON' : 'AUDIO MUTED');\n    });\n    document.getElementById('btn-reset-cam').addEventListener('click', () => {\n      if (camera && controls) {\n        camera.position.set(3.2, 2.4, 4.0);\n        controls.target.set(0, 0, 0);\n        controls.update();\n        showToast('CAMERA ORIENTATION RESET');\n      }\n    });\n    document.getElementById('btn-toggle-wireframe').addEventListener('click', function() {\n      TelemetryStore.isWireframe = !TelemetryStore.isWireframe;\n      this.classList.toggle('active', TelemetryStore.isWireframe);\n      if (cubeSatGroup) {\n        cubeSatGroup.traverse(c => {\n          if (c.isMesh && c.material) c.material.wireframe = TelemetryStore.isWireframe;\n        });\n      }\n      showToast(TelemetryStore.isWireframe ? 'WIREFRAME VIEW ACTIVATED' : 'SHADED SURFACE RESTORED');\n    });\n    window.addEventListener('keydown', e => { if (e.key === 'Escape') closeSensorModal(null); });\n    window.addEventListener('DOMContentLoaded', () => {\n      initThreeCubeSat();\n      initGroundTrackCanvas();\n      initOverviewChart();\n      renderDashboardUI();\n      showToast('ASTRA ORBIT 2.0 MISSION CONTROL READY // LIVE MODE');\n    });\n  </script>\n</body>\n</html>"
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASTRA ORBIT 2.0 – CubeSat Mission Control</title>
+  
+  <!-- EXTERNAL CDN LIBRARIES -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+  <style>
+    :root {
+      --bg-deep: #050811;
+      --bg-panel: #0b1124;
+      --bg-card: #101935;
+      --border-color: #1a2952;
+      --accent-cyan: #00e5ff;
+      --accent-blue: #0077ff;
+      --text-main: #f0f4fc;
+      --text-muted: #798bb4;
+      --status-green: #00e676;
+      --status-yellow: #ffea00;
+      --status-red: #ff1744;
+      --font-mono: "SF Mono", "Fira Code", "Courier New", monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-deep);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    .stars-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: 
+        radial-gradient(1px 1px at 20px 30px, #ffffff, rgba(0,0,0,0)),
+        radial-gradient(1.5px 1.5px at 150px 180px, #00e5ff, rgba(0,0,0,0)),
+        radial-gradient(1px 1px at 300px 90px, #ffffff, rgba(0,0,0,0));
+      background-size: 400px 400px;
+      opacity: 0.25;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* MISSION CONTROL HEADER */
+    .mission-header {
+      position: relative;
+      z-index: 10;
+      background-color: var(--bg-panel);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .mission-insignia {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      color: #000;
+      font-weight: 900;
+      font-size: 1.1rem;
+      padding: 8px 12px;
+      border-radius: 4px;
+      letter-spacing: 1px;
+    }
+
+    .mission-header h1 {
+      font-size: 1.3rem;
+      letter-spacing: 2px;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .subtitle {
+      font-size: 0.65rem;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .status-badge {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 6px 12px;
+      border-radius: 2px;
+      background-color: #060a17;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      transition: all 0.3s ease;
+    }
+
+    .status-badge.connected {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .status-badge.live {
+      border-color: var(--status-green);
+      color: var(--status-green);
+      box-shadow: 0 0 10px rgba(0, 230, 118, 0.2);
+    }
+
+    .btn {
+      font-family: var(--font-sans);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-primary {
+      background-color: var(--accent-cyan);
+      color: #000;
+    }
+
+    .btn-primary:hover {
+      background-color: #66efff;
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+    }
+
+    .btn-danger {
+      background-color: var(--status-red);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background-color: var(--border-color);
+      color: #fff;
+    }
+
+    .btn-secondary:hover {
+      background-color: #263c75;
+    }
+
+    .hidden { display: none !important; }
+
+    /* NAVIGATION TABS */
+    .nav-bar {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      background-color: var(--bg-deep);
+      border-bottom: 1px solid var(--border-color);
+      padding: 0 24px;
+    }
+
+    .nav-tab {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      padding: 14px 20px;
+      cursor: pointer;
+      position: relative;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .nav-tab:hover {
+      color: #fff;
+    }
+
+    .nav-tab.active {
+      color: var(--accent-cyan);
+      border-bottom-color: var(--accent-cyan);
+    }
+
+    /* MAIN CONTAINER */
+    .content-container {
+      position: relative;
+      z-index: 5;
+      flex: 1;
+      padding: 24px;
+    }
+
+    .tab-pane {
+      display: none;
+    }
+
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* TELEMETRY METRIC CARDS */
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .telemetry-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 16px;
+      position: relative;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .telemetry-card.clickable {
+      cursor: pointer;
+    }
+
+    .telemetry-card.clickable:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent-cyan);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+    }
+
+    .badge {
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 2px;
+      font-family: var(--font-mono);
+      background-color: #1a233a;
+      color: var(--text-muted);
+      border: 1px solid transparent;
+    }
+
+    .badge-online {
+      background-color: rgba(0, 230, 118, 0.15);
+      color: var(--status-green);
+      border: 1px solid var(--status-green);
+    }
+
+    .badge-error {
+      background-color: rgba(255, 23, 68, 0.15);
+      color: var(--status-red);
+      border: 1px solid var(--status-red);
+    }
+
+    .card-metric {
+      font-family: var(--font-mono);
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 12px 0 8px 0;
+    }
+
+    .card-metric .unit {
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+
+    .card-stats {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      border-top: 1px solid var(--border-color);
+      padding-top: 8px;
+    }
+
+    .card-multi-metric {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      margin: 12px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .card-subtext {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* SPLIT VIEW (3D MINI & PROFILE GRAPH) */
+    .split-view {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .split-view {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel-box {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 16px;
+    }
+
+    .panel-box h3 {
+      font-size: 0.8rem;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .canvas-3d {
+      width: 100%;
+      height: 280px;
+      background-color: #03060f;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .graph-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 4px;
+    }
+
+    .btn-filter {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      padding: 4px 8px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+
+    .btn-filter.active {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    .canvas-container {
+      position: relative;
+      height: 240px;
+      width: 100%;
+    }
+
+    /* LIVE TELEMETRY GRAPHS TAB */
+    .graph-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 16px;
+    }
+
+    .graph-card {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      padding: 16px;
+      border-radius: 4px;
+      height: 280px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .graph-card h4 {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .graph-card .chart-wrapper {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 3D ATTITUDE VIEWPORT */
+    .attitude-layout {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      height: calc(100vh - 200px);
+      min-height: 500px;
+    }
+
+    @media (max-width: 900px) {
+      .attitude-layout {
+        grid-template-columns: 1fr;
+        height: auto;
+      }
+    }
+
+    .attitude-viewport {
+      background-color: #03060f;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+      min-height: 400px;
+    }
+
+    .attitude-telemetry-panel {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      padding: 20px;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .data-row {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      padding: 6px 0;
+      border-bottom: 1px solid #141f3d;
+    }
+
+    .note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-top: auto;
+    }
+
+    /* GPS VIEWPORT */
+    .gps-readout-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .gps-readout-item {
+      background-color: var(--bg-card);
+      padding: 16px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .gps-readout-item span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .gps-readout-item b {
+      font-family: var(--font-mono);
+      font-size: 1.3rem;
+      color: var(--accent-cyan);
+    }
+
+    /* SYSTEM HEALTH TABLE */
+    .health-table-box {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      padding: 20px;
+      border-radius: 4px;
+    }
+
+    .health-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      margin-top: 16px;
+    }
+
+    .health-table th, .health-table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .health-table th {
+      color: var(--text-muted);
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .health-table td {
+      font-family: var(--font-mono);
+    }
+
+    /* SENSOR MODAL */
+    .modal {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(3, 6, 15, 0.85);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-content {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--accent-cyan);
+      width: 90%;
+      max-width: 800px;
+      border-radius: 6px;
+      padding: 24px;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 12px;
+    }
+
+    .btn-close {
+      background: none;
+      border: none;
+      color: #fff;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+
+    .modal-body {
+      margin-top: 16px;
+    }
+
+    .modal-metric {
+      font-family: var(--font-mono);
+      font-size: 2.5rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      text-align: center;
+    }
+
+    .modal-stats {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin: 12px 0 20px 0;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .modal-chart-container {
+      height: 300px;
+      position: relative;
+    }
+
+    /* FOOTER */
+    .mission-footer {
+      background-color: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      padding: 8px 24px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="stars-overlay"></div>
+  
+  <!-- MISSION CONTROL HEADER -->
+  <header class="mission-header">
+    <div class="logo-area">
+      <div class="mission-insignia">AO-2</div>
+      <div>
+        <h1>ASTRA ORBIT 2.0</h1>
+        <p class="subtitle">REAL-TIME CUBESAT TELEMETRY & FLIGHT OPERATIONS</p>
+      </div>
+    </div>
+    
+    <div class="header-controls">
+      <div class="status-badge" id="espStatus">ESP32: DISCONNECTED</div>
+      <div class="status-badge" id="telemStatus">TELEMETRY: WAITING FOR CONNECTION</div>
+      <div class="status-badge" id="packetBadge">PACKETS: 0</div>
+      <button id="btnConnect" class="btn btn-primary">CONNECT ESP32</button>
+      <button id="btnDisconnect" class="btn btn-danger hidden">DISCONNECT</button>
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS -->
+  <nav class="nav-bar">
+    <button class="nav-tab active" data-tab="overview">OVERVIEW</button>
+    <button class="nav-tab" data-tab="telemetry">LIVE TELEMETRY</button>
+    <button class="nav-tab" data-tab="attitude">3D ATTITUDE</button>
+    <button class="nav-tab" data-tab="gps">GPS & ORBIT</button>
+    <button class="nav-tab" data-tab="health">SYSTEM HEALTH</button>
+  </nav>
+
+  <!-- MAIN VIEW CONTAINER -->
+  <main class="content-container">
+
+    <!-- TAB 1: MISSION OVERVIEW -->
+    <section id="tab-overview" class="tab-pane active">
+      <div class="grid-container">
+        
+        <!-- CARD: TEMPERATURE -->
+        <div class="telemetry-card clickable" onclick="openDetail('temp')">
+          <div class="card-header">
+            <span>TEMPERATURE (BMP/DHT)</span>
+            <span class="badge" id="badge-temp">OFFLINE</span>
+          </div>
+          <div class="card-metric" id="val-temp">0.00 <span class="unit">°C</span></div>
+          <div class="card-stats">
+            <span>MIN: <b id="min-temp">0.0</b></span>
+            <span>MAX: <b id="max-temp">0.0</b></span>
+            <span>AVG: <b id="avg-temp">0.0</b></span>
+          </div>
+        </div>
+
+        <!-- CARD: HUMIDITY -->
+        <div class="telemetry-card clickable" onclick="openDetail('hum')">
+          <div class="card-header">
+            <span>RELATIVE HUMIDITY (DHT11)</span>
+            <span class="badge" id="badge-hum">OFFLINE</span>
+          </div>
+          <div class="card-metric" id="val-hum">0.0 <span class="unit">%</span></div>
+          <div class="card-stats">
+            <span>MIN: <b id="min-hum">0.0</b></span>
+            <span>MAX: <b id="max-hum">0.0</b></span>
+            <span>AVG: <b id="avg-hum">0.0</b></span>
+          </div>
+        </div>
+
+        <!-- CARD: PRESSURE -->
+        <div class="telemetry-card clickable" onclick="openDetail('pres')">
+          <div class="card-header">
+            <span>BAROMETRIC PRESSURE (BMP280)</span>
+            <span class="badge" id="badge-pres">OFFLINE</span>
+          </div>
+          <div class="card-metric" id="val-pres">0.00 <span class="unit">hPa</span></div>
+          <div class="card-stats">
+            <span>MIN: <b id="min-pres">0.0</b></span>
+            <span>MAX: <b id="max-pres">0.0</b></span>
+            <span>AVG: <b id="avg-pres">0.0</b></span>
+          </div>
+        </div>
+
+        <!-- CARD: ATTITUDE -->
+        <div class="telemetry-card clickable" onclick="openDetail('attitude')">
+          <div class="card-header">
+            <span>ATTITUDE (MPU6050)</span>
+            <span class="badge" id="badge-mpu">OFFLINE</span>
+          </div>
+          <div class="card-multi-metric">
+            <div>ROLL: <b id="val-roll">0.00°</b></div>
+            <div>PITCH: <b id="val-pitch">0.00°</b></div>
+          </div>
+          <div class="card-subtext">ACCEL Z: <span id="val-accelZ">0.00</span> g</div>
+        </div>
+
+        <!-- CARD: GPS GEO -->
+        <div class="telemetry-card clickable" onclick="openDetail('gps')">
+          <div class="card-header">
+            <span>GPS POSITION (NEO-6M)</span>
+            <span class="badge" id="badge-gps">NO FIX</span>
+          </div>
+          <div class="card-multi-metric">
+            <div>LAT: <b id="val-lat">0.000000</b></div>
+            <div>LNG: <b id="val-lng">0.000000</b></div>
+          </div>
+          <div class="card-stats">
+            <span>ALT: <b id="val-alt">0.0 m</b></span>
+            <span>SATS: <b id="val-sats">0</b></span>
+          </div>
+        </div>
+
+        <!-- CARD: SOLAR BUS -->
+        <div class="telemetry-card">
+          <div class="card-header">
+            <span>POWER SYSTEM (SOLAR BUS)</span>
+            <span class="badge badge-online">MONITOR</span>
+          </div>
+          <div class="card-metric" id="val-solar">0.00 <span class="unit">V</span></div>
+          <div class="card-subtext">Estimated Battery Float Mode</div>
+        </div>
+
+      </div>
+
+      <!-- MINI 3D AND OVERVIEW GRAPH -->
+      <div class="split-view">
+        <div class="panel-box">
+          <h3>REAL-TIME ATTITUDE ORIENTATION</h3>
+          <div id="cubesat-preview-canvas" class="canvas-3d"></div>
+        </div>
+        <div class="panel-box">
+          <div class="graph-header">
+            <h3>ATMOSPHERIC PROFILE</h3>
+            <div class="filter-group">
+              <button class="btn-filter" data-minutes="1">1M</button>
+              <button class="btn-filter" data-minutes="5">5M</button>
+              <button class="btn-filter active" data-minutes="15">15M</button>
+            </div>
+          </div>
+          <div class="canvas-container">
+            <canvas id="overviewChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: DETAILED LIVE TELEMETRY GRAPHS -->
+    <section id="tab-telemetry" class="tab-pane">
+      <div class="graph-grid">
+        <div class="graph-card">
+          <h4>Temperature History (°C)</h4>
+          <div class="chart-wrapper"><canvas id="tempChart"></canvas></div>
+        </div>
+        <div class="graph-card">
+          <h4>Relative Humidity History (%)</h4>
+          <div class="chart-wrapper"><canvas id="humChart"></canvas></div>
+        </div>
+        <div class="graph-card">
+          <h4>Pressure History (hPa)</h4>
+          <div class="chart-wrapper"><canvas id="presChart"></canvas></div>
+        </div>
+        <div class="graph-card">
+          <h4>Accelerometer (X, Y, Z in g)</h4>
+          <div class="chart-wrapper"><canvas id="accelChart"></canvas></div>
+        </div>
+        <div class="graph-card">
+          <h4>Gyroscope (X, Y, Z in °/s)</h4>
+          <div class="chart-wrapper"><canvas id="gyroChart"></canvas></div>
+        </div>
+        <div class="graph-card">
+          <h4>Attitude Angles (Roll, Pitch in °)</h4>
+          <div class="chart-wrapper"><canvas id="attitudeChart"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: FULL 3D INTERACTIVE CUBESAT -->
+    <section id="tab-attitude" class="tab-pane">
+      <div class="attitude-layout">
+        <div class="attitude-viewport" id="cubesat-full-canvas"></div>
+        <div class="attitude-telemetry-panel">
+          <h3>FLIGHT DYNAMICS (INERTIAL)</h3>
+          <div class="data-row"><span>Roll:</span> <b id="full-roll">0.00°</b></div>
+          <div class="data-row"><span>Pitch:</span> <b id="full-pitch">0.00°</b></div>
+          <div class="data-row"><span>Accel X:</span> <b id="full-ax">0.000 g</b></div>
+          <div class="data-row"><span>Accel Y:</span> <b id="full-ay">0.000 g</b></div>
+          <div class="data-row"><span>Accel Z:</span> <b id="full-az">0.000 g</b></div>
+          <div class="data-row"><span>Gyro X:</span> <b id="full-gx">0.00 °/s</b></div>
+          <div class="data-row"><span>Gyro Y:</span> <b id="full-gy">0.00 °/s</b></div>
+          <div class="data-row"><span>Gyro Z:</span> <b id="full-gz">0.00 °/s</b></div>
+          <p class="note">Yaw computation requires external magnetometer referencing to mitigate gyro integration drift. Attitude currently constrained to calibrated 2-axis accelerometer vector analysis.</p>
+          <button class="btn btn-secondary" onclick="reset3DCamera()">RESET CAMERA</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: GPS & ORBIT TRACKER -->
+    <section id="tab-gps" class="tab-pane">
+      <div class="gps-layout">
+        <div class="panel-box">
+          <h3>COORDINATES & NAVIGATION FIX</h3>
+          <div class="gps-readout-grid">
+            <div class="gps-readout-item"><span>Latitude</span><b id="gps-lat">0.000000°</b></div>
+            <div class="gps-readout-item"><span>Longitude</span><b id="gps-lng">0.000000°</b></div>
+            <div class="gps-readout-item"><span>Altitude</span><b id="gps-alt">0.0 m</b></div>
+            <div class="gps-readout-item"><span>Ground Speed</span><b id="gps-speed">0.00 km/h</b></div>
+            <div class="gps-readout-item"><span>Satellites In View</span><b id="gps-sats">0</b></div>
+            <div class="gps-readout-item"><span>Receiver State</span><b id="gps-fix-state">NO FIX</b></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: SYSTEM HEALTH -->
+    <section id="tab-health" class="tab-pane">
+      <div class="health-table-box">
+        <h3>SUBSYSTEM TELEMETRY HEALTH DIAGNOSTICS</h3>
+        <table class="health-table">
+          <thead>
+            <tr>
+              <th>Subsystem</th>
+              <th>Hardware Component</th>
+              <th>Expected Interface</th>
+              <th>Status</th>
+              <th>Telemetry Integrity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Ground Station Link</td>
+              <td>CP210x / CH340 USB CDC</td>
+              <td>Web Serial (115200 bps)</td>
+              <td id="health-serial">DISCONNECTED</td>
+              <td id="health-serial-desc">Awaiting port allocation</td>
+            </tr>
+            <tr>
+              <td>Downlink RF</td>
+              <td>ESP-NOW Protocol</td>
+              <td>2.4 GHz Proprietary</td>
+              <td id="health-rf">OFFLINE</td>
+              <td id="health-rf-desc">Awaiting valid packet ingress</td>
+            </tr>
+            <tr>
+              <td>Atmospheric Package</td>
+              <td>Bosch BMP280</td>
+              <td>I2C: 0x76 / 0x77</td>
+              <td id="health-bmp">OFFLINE</td>
+              <td id="health-bmp-desc">No reading</td>
+            </tr>
+            <tr>
+              <td>Humidity Package</td>
+              <td>Aosong DHT11</td>
+              <td>Single-Bus (GPIO 4)</td>
+              <td id="health-dht">OFFLINE</td>
+              <td id="health-dht-desc">No reading</td>
+            </tr>
+            <tr>
+              <td>IMU Package</td>
+              <td>InvenSense MPU6050</td>
+              <td>I2C: 0x68</td>
+              <td id="health-mpu">OFFLINE</td>
+              <td id="health-mpu-desc">No reading</td>
+            </tr>
+            <tr>
+              <td>GNSS Positioning</td>
+              <td>u-blox NEO-6M</td>
+              <td>HardwareSerial2 (9600 bps)</td>
+              <td id="health-gps">NO FIX</td>
+              <td id="health-gps-desc">No valid ephemeris lock</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- DEDICATED SENSOR MODAL / DRILLDOWN -->
+    <div id="sensorDetailModal" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 id="modalTitle">SENSOR DRILLDOWN</h2>
+          <button class="btn-close" onclick="closeDetail()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-metric" id="modalMetric">--</div>
+          <div class="modal-stats" id="modalStats"></div>
+          <div class="modal-chart-container">
+            <canvas id="modalChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- MISSION CONTROL FOOTER -->
+  <footer class="mission-footer">
+    <span>ASTRA ORBIT 2.0 | REAL SENSOR TELEMETRY PIPELINE</span>
+    <span>STATUS: <span id="footerConnection">IDLE</span></span>
+    <span>MISSION TIME: <span id="missionClock">00:00:00 UTC</span></span>
+  </footer>
+
+  <!-- EMBEDDED JAVASCRIPT PIPELINE -->
+  <script>
+    /* ==========================================================================
+       1. GLOBAL STATE & TELEMETRY DEFINITION
+       Zero random data. All values remain 0 until genuine packets arrive.
+       ========================================================================== */
+    const initialTelemetry = {
+      temperature: 0.0,
+      humidity: 0.0,
+      pressure: 0.0,
+      accelX: 0.0,
+      accelY: 0.0,
+      accelZ: 0.0,
+      gyroX: 0.0,
+      gyroY: 0.0,
+      gyroZ: 0.0,
+      roll: 0.0,
+      pitch: 0.0,
+      latitude: 0.0,
+      longitude: 0.0,
+      altitude: 0.0,
+      speed: 0.0,
+      satellites: 0,
+      vSolar: 0.0,
+      packetCount: 0
+    };
+
+    window.AstraState = {
+      isConnected: false,
+      isTelemetryLive: false,
+      lastPacketTimestamp: null,
+      packetCount: 0,
+      current: { ...initialTelemetry },
+      history: [],
+      stats: {
+        temp: { min: Infinity, max: -Infinity, sum: 0, count: 0 },
+        hum:  { min: Infinity, max: -Infinity, sum: 0, count: 0 },
+        pres: { min: Infinity, max: -Infinity, sum: 0, count: 0 }
+      }
+    };
+
+    function updateStat(metric, val) {
+      const s = window.AstraState.stats[metric];
+      if (val < s.min) s.min = val;
+      if (val > s.max) s.max = val;
+      s.sum += val;
+      s.count++;
+    }
+
+    function processIncomingTelemetry(packet) {
+      if (!packet || typeof packet.packet !== "number") {
+        return;
+      }
+
+      const now = Date.now();
+      const state = window.AstraState;
+
+      state.isTelemetryLive = true;
+      state.lastPacketTimestamp = now;
+      state.packetCount = packet.packet;
+
+      state.current = {
+        temperature: typeof packet.temp === "number" ? packet.temp : 0.0,
+        humidity: typeof packet.hum === "number" ? packet.hum : 0.0,
+        pressure: typeof packet.pres === "number" ? packet.pres : 0.0,
+        accelX: typeof packet.accelX === "number" ? packet.accelX : 0.0,
+        accelY: typeof packet.accelY === "number" ? packet.accelY : 0.0,
+        accelZ: typeof packet.accelZ === "number" ? packet.accelZ : 0.0,
+        gyroX: typeof packet.gyroX === "number" ? packet.gyroX : 0.0,
+        gyroY: typeof packet.gyroY === "number" ? packet.gyroY : 0.0,
+        gyroZ: typeof packet.gyroZ === "number" ? packet.gyroZ : 0.0,
+        roll: typeof packet.roll === "number" ? packet.roll : 0.0,
+        pitch: typeof packet.pitch === "number" ? packet.pitch : 0.0,
+        latitude: typeof packet.lat === "number" ? packet.lat : 0.0,
+        longitude: typeof packet.lng === "number" ? packet.lng : 0.0,
+        altitude: typeof packet.alt === "number" ? packet.alt : 0.0,
+        speed: typeof packet.speed === "number" ? packet.speed : 0.0,
+        satellites: typeof packet.sats === "number" ? packet.sats : 0,
+        vSolar: typeof packet.vSolar === "number" ? packet.vSolar : 0.0,
+        packetCount: packet.packet,
+        sensorStatus: packet.status || { bmp: 0, dht: 0, mpu: 0, gps: 0 },
+        gpsFix: !!packet.gpsFix
+      };
+
+      if (state.current.sensorStatus.bmp || state.current.sensorStatus.dht) {
+        updateStat('temp', state.current.temperature);
+      }
+      if (state.current.sensorStatus.dht) {
+        updateStat('hum', state.current.humidity);
+      }
+      if (state.current.sensorStatus.bmp) {
+        updateStat('pres', state.current.pressure);
+      }
+
+      state.history.push({
+        timestamp: now,
+        data: { ...state.current }
+      });
+
+      const fifteenMinutesAgo = now - 15 * 60 * 1000;
+      while (state.history.length > 0 && state.history[0].timestamp < fifteenMinutesAgo) {
+        state.history.shift();
+      }
+
+      renderDashboardUI();
+      pushChartDataPoint(now, state.current);
+      update3DAttitude(state.current.roll, state.current.pitch);
+    }
+
+    /* ==========================================================================
+       2. WEB SERIAL API SUBSYSTEM
+       Strict line-buffered asynchronous stream decoding at 115200 baud.
+       ========================================================================== */
+    let serialPort = null;
+    let serialReader = null;
+    let keepReading = false;
+    let inputBuffer = "";
+
+    const btnConnect = document.getElementById("btnConnect");
+    const btnDisconnect = document.getElementById("btnDisconnect");
+    const espStatus = document.getElementById("espStatus");
+    const telemStatus = document.getElementById("telemStatus");
+
+    btnConnect.addEventListener("click", connectSerial);
+    btnDisconnect.addEventListener("click", disconnectSerial);
+
+    async function connectSerial() {
+      if (!("serial" in navigator)) {
+        alert("Web Serial API is not supported in this browser. Please use desktop Google Chrome or Microsoft Edge.");
+        return;
+      }
+
+      try {
+        serialPort = await navigator.serial.requestPort();
+        await serialPort.open({ baudRate: 115200 });
+
+        keepReading = true;
+        window.AstraState.isConnected = true;
+
+        espStatus.textContent = "ESP32: CONNECTED";
+        espStatus.className = "status-badge connected";
+        telemStatus.textContent = "TELEMETRY: WAITING FOR DATA";
+
+        btnConnect.classList.add("hidden");
+        btnDisconnect.classList.remove("hidden");
+        
+        document.getElementById("health-serial").textContent = "CONNECTED";
+        document.getElementById("health-serial").className = "badge-online";
+        document.getElementById("health-serial-desc").textContent = "Port Open @ 115200 Baud";
+
+        readSerialLoop();
+      } catch (err) {
+        console.error("Serial Connection Error:", err);
+        disconnectSerial();
+      }
+    }
+
+    async function readSerialLoop() {
+      const textDecoder = new TextDecoderStream();
+      const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
+      serialReader = textDecoder.readable.getReader();
+
+      try {
+        while (keepReading) {
+          const { value, done } = await serialReader.read();
+          if (done) break;
+          if (value) {
+            inputBuffer += value;
+            const lines = inputBuffer.split("\n");
+            inputBuffer = lines.pop();
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  processIncomingTelemetry(parsed);
+                } catch (jsonErr) {
+                  // Ignore corrupted frames
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Stream Read Error:", err);
+      } finally {
+        if (serialReader) {
+          try { serialReader.releaseLock(); } catch(e) {}
+        }
+      }
+    }
+
+    async function disconnectSerial() {
+      keepReading = false;
+      window.AstraState.isConnected = false;
+      window.AstraState.isTelemetryLive = false;
+
+      if (serialReader) {
+        try { await serialReader.cancel(); } catch (e) {}
+      }
+
+      if (serialPort) {
+        try { await serialPort.close(); } catch (e) {}
+        serialPort = null;
+      }
+
+      espStatus.textContent = "ESP32: DISCONNECTED";
+      espStatus.className = "status-badge";
+      telemStatus.textContent = "TELEMETRY: STOPPED";
+      telemStatus.className = "status-badge";
+
+      btnConnect.classList.remove("hidden");
+      btnDisconnect.classList.add("hidden");
+
+      document.getElementById("health-serial").textContent = "DISCONNECTED";
+      document.getElementById("health-serial").className = "badge-error";
+      document.getElementById("health-serial-desc").textContent = "Port Closed";
+    }
+
+    /* ==========================================================================
+       3. CHART.JS HISTORICAL TELEMETRY ENGINE
+       Strict real data points only. No simulated ticks.
+       ========================================================================== */
+    let currentTimeWindowMinutes = 15;
+    const chartInstances = {};
+
+    const chartOptionsBase = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: {
+          type: 'linear',
+          grid: { color: '#141f3d' },
+          ticks: {
+            color: '#798bb4',
+            font: { family: 'SF Mono' },
+            callback: (value) => {
+              const d = new Date(value);
+              return `${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}`;
+            }
+          }
+        },
+        y: {
+          grid: { color: '#141f3d' },
+          ticks: { color: '#798bb4', font: { family: 'SF Mono' } }
+        }
+      },
+      plugins: {
+        legend: { labels: { color: '#f0f4fc', font: { family: 'SF Mono', size: 10 } } }
+      }
+    };
+
+    function initCharts() {
+      // Atmospheric Overview
+      chartInstances.overview = new Chart(document.getElementById("overviewChart"), {
+        type: 'line',
+        data: {
+          datasets: [
+            { label: 'Temp (°C)', borderColor: '#00e5ff', data: [], borderWidth: 2, pointRadius: 0 },
+            { label: 'Humidity (%)', borderColor: '#00e676', data: [], borderWidth: 2, pointRadius: 0 }
+          ]
+        },
+        options: chartOptionsBase
+      });
+
+      // Individual Telemetry Charts
+      chartInstances.temp = new Chart(document.getElementById("tempChart"), {
+        type: 'line',
+        data: { datasets: [{ label: 'Temperature (°C)', borderColor: '#00e5ff', data: [], borderWidth: 2, pointRadius: 0 }] },
+        options: chartOptionsBase
+      });
+
+      chartInstances.hum = new Chart(document.getElementById("humChart"), {
+        type: 'line',
+        data: { datasets: [{ label: 'Humidity (%)', borderColor: '#00e676', data: [], borderWidth: 2, pointRadius: 0 }] },
+        options: chartOptionsBase
+      });
+
+      chartInstances.pres = new Chart(document.getElementById("presChart"), {
+        type: 'line',
+        data: { datasets: [{ label: 'Pressure (hPa)', borderColor: '#ffea00', data: [], borderWidth: 2, pointRadius: 0 }] },
+        options: chartOptionsBase
+      });
+
+      chartInstances.accel = new Chart(document.getElementById("accelChart"), {
+        type: 'line',
+        data: {
+          datasets: [
+            { label: 'Accel X', borderColor: '#ff1744', data: [], borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Accel Y', borderColor: '#00e676', data: [], borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Accel Z', borderColor: '#00e5ff', data: [], borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: chartOptionsBase
+      });
+
+      chartInstances.gyro = new Chart(document.getElementById("gyroChart"), {
+        type: 'line',
+        data: {
+          datasets: [
+            { label: 'Gyro X', borderColor: '#ff1744', data: [], borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Gyro Y', borderColor: '#00e676', data: [], borderWidth: 1.5, pointRadius: 0 },
+            { label: 'Gyro Z', borderColor: '#00e5ff', data: [], borderWidth: 1.5, pointRadius: 0 }
+          ]
+        },
+        options: chartOptionsBase
+      });
+
+      chartInstances.attitude = new Chart(document.getElementById("attitudeChart"), {
+        type: 'line',
+        data: {
+          datasets: [
+            { label: 'Roll (°)', borderColor: '#00e5ff', data: [], borderWidth: 2, pointRadius: 0 },
+            { label: 'Pitch (°)', borderColor: '#ffea00', data: [], borderWidth: 2, pointRadius: 0 }
+          ]
+        },
+        options: chartOptionsBase
+      });
+    }
+
+    function pushChartDataPoint(timestamp, d) {
+      chartInstances.overview.data.datasets[0].data.push({ x: timestamp, y: d.temperature });
+      chartInstances.overview.data.datasets[1].data.push({ x: timestamp, y: d.humidity });
+
+      chartInstances.temp.data.datasets[0].data.push({ x: timestamp, y: d.temperature });
+      chartInstances.hum.data.datasets[0].data.push({ x: timestamp, y: d.humidity });
+      chartInstances.pres.data.datasets[0].data.push({ x: timestamp, y: d.pressure });
+
+      chartInstances.accel.data.datasets[0].data.push({ x: timestamp, y: d.accelX });
+      chartInstances.accel.data.datasets[1].data.push({ x: timestamp, y: d.accelY });
+      chartInstances.accel.data.datasets[2].data.push({ x: timestamp, y: d.accelZ });
+
+      chartInstances.gyro.data.datasets[0].data.push({ x: timestamp, y: d.gyroX });
+      chartInstances.gyro.data.datasets[1].data.push({ x: timestamp, y: d.gyroY });
+      chartInstances.gyro.data.datasets[2].data.push({ x: timestamp, y: d.gyroZ });
+
+      chartInstances.attitude.data.datasets[0].data.push({ x: timestamp, y: d.roll });
+      chartInstances.attitude.data.datasets[1].data.push({ x: timestamp, y: d.pitch });
+
+      pruneAndRenderCharts(timestamp);
+    }
+
+    document.querySelectorAll(".btn-filter").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        document.querySelectorAll(".btn-filter").forEach(b => b.classList.remove("active"));
+        e.target.classList.add("active");
+        currentTimeWindowMinutes = parseInt(e.target.dataset.minutes, 10);
+        if (window.AstraState.lastPacketTimestamp) {
+          pruneAndRenderCharts(window.AstraState.lastPacketTimestamp);
+        }
+      });
+    });
+
+    function pruneAndRenderCharts(now) {
+      const minTime = now - currentTimeWindowMinutes * 60 * 1000;
+
+      Object.values(chartInstances).forEach(chart => {
+        chart.options.scales.x.min = minTime;
+        chart.options.scales.x.max = now;
+        chart.data.datasets.forEach(ds => {
+          while (ds.data.length > 0 && ds.data[0].x < minTime - 60000) {
+            ds.data.shift();
+          }
+        });
+        chart.update('none');
+      });
+    }
+
+    /* ==========================================================================
+       4. THREE.JS 3D CUBESAT ORIENTATION SYSTEM
+       Remains completely stationary until verified hardware IMU telemetry arrives.
+       ========================================================================== */
+    let scenePreview, cameraPreview, rendererPreview, cubesatPreview;
+    let sceneFull, cameraFull, rendererFull, cubesatFull;
+
+    function buildCubeSatMesh() {
+      const cubesatGroup = new THREE.Group();
+
+      // 1U Main Aluminum Chassis
+      const bodyGeo = new THREE.BoxGeometry(2, 2, 2);
+      const bodyMat = new THREE.MeshStandardMaterial({
+        color: 0x1f293d,
+        metalness: 0.85,
+        roughness: 0.25
+      });
+      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      cubesatGroup.add(body);
+
+      // Chassis Rails / Edge Highlights
+      const edges = new THREE.EdgesGeometry(bodyGeo);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, linewidth: 2 });
+      const wireframe = new THREE.LineSegments(edges, lineMat);
+      cubesatGroup.add(wireframe);
+
+      // Deployable Solar Arrays
+      const panelGeo = new THREE.BoxGeometry(1.8, 0.05, 1.8);
+      const panelMat = new THREE.MeshStandardMaterial({
+        color: 0x0a1c3d,
+        roughness: 0.1,
+        metalness: 0.9
+      });
+
+      const leftWing = new THREE.Mesh(panelGeo, panelMat);
+      leftWing.position.set(-2, 0, 0);
+      cubesatGroup.add(leftWing);
+
+      const rightWing = new THREE.Mesh(panelGeo, panelMat);
+      rightWing.position.set(2, 0, 0);
+      cubesatGroup.add(rightWing);
+
+      // Monopole Antenna
+      const antennaGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.5);
+      const antennaMat = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+      const antenna = new THREE.Mesh(antennaGeo, antennaMat);
+      antenna.position.set(0, 1.75, 0);
+      cubesatGroup.add(antenna);
+
+      return cubesatGroup;
+    }
+
+    function init3D() {
+      // 1. Overview Miniature Viewport
+      const previewContainer = document.getElementById("cubesat-preview-canvas");
+      if (previewContainer) {
+        scenePreview = new THREE.Scene();
+        cameraPreview = new THREE.PerspectiveCamera(45, previewContainer.clientWidth / previewContainer.clientHeight, 0.1, 100);
+        cameraPreview.position.set(3, 3, 5);
+        cameraPreview.lookAt(0, 0, 0);
+
+        rendererPreview = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        rendererPreview.setSize(previewContainer.clientWidth, previewContainer.clientHeight);
+        previewContainer.appendChild(rendererPreview.domElement);
+
+        const light1 = new THREE.DirectionalLight(0xffffff, 1.5);
+        light1.position.set(5, 10, 7);
+        scenePreview.add(light1);
+        scenePreview.add(new THREE.AmbientLight(0x404040, 1.2));
+
+        cubesatPreview = buildCubeSatMesh();
+        scenePreview.add(cubesatPreview);
+        rendererPreview.render(scenePreview, cameraPreview);
+      }
+
+      // 2. Full Attitude Viewport
+      const fullContainer = document.getElementById("cubesat-full-canvas");
+      if (fullContainer) {
+        sceneFull = new THREE.Scene();
+        cameraFull = new THREE.PerspectiveCamera(45, fullContainer.clientWidth / fullContainer.clientHeight, 0.1, 100);
+        cameraFull.position.set(4, 4, 6);
+        cameraFull.lookAt(0, 0, 0);
+
+        rendererFull = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        rendererFull.setSize(fullContainer.clientWidth, fullContainer.clientHeight);
+        fullContainer.appendChild(rendererFull.domElement);
+
+        const light2 = new THREE.DirectionalLight(0xffffff, 2.0);
+        light2.position.set(5, 10, 7);
+        sceneFull.add(light2);
+        sceneFull.add(new THREE.AmbientLight(0x404040, 1.5));
+
+        cubesatFull = buildCubeSatMesh();
+        sceneFull.add(cubesatFull);
+        rendererFull.render(sceneFull, cameraFull);
+      }
+
+      window.addEventListener("resize", onWindowResize);
+    }
+
+    function onWindowResize() {
+      const pCont = document.getElementById("cubesat-preview-canvas");
+      if (pCont && rendererPreview && pCont.clientWidth > 0 && pCont.clientHeight > 0) {
+        cameraPreview.aspect = pCont.clientWidth / pCont.clientHeight;
+        cameraPreview.updateProjectionMatrix();
+        rendererPreview.setSize(pCont.clientWidth, pCont.clientHeight);
+        rendererPreview.render(scenePreview, cameraPreview);
+      }
+
+      const fCont = document.getElementById("cubesat-full-canvas");
+      if (fCont && rendererFull && fCont.clientWidth > 0 && fCont.clientHeight > 0) {
+        cameraFull.aspect = fCont.clientWidth / fCont.clientHeight;
+        cameraFull.updateProjectionMatrix();
+        rendererFull.setSize(fCont.clientWidth, fCont.clientHeight);
+        rendererFull.render(sceneFull, cameraFull);
+      }
+    }
+
+    function update3DAttitude(rollDeg, pitchDeg) {
+      const rollRad = THREE.MathUtils.degToRad(rollDeg);
+      const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
+
+      if (cubesatPreview) {
+        cubesatPreview.rotation.z = -rollRad;
+        cubesatPreview.rotation.x = pitchRad;
+        rendererPreview.render(scenePreview, cameraPreview);
+      }
+
+      if (cubesatFull) {
+        cubesatFull.rotation.z = -rollRad;
+        cubesatFull.rotation.x = pitchRad;
+        rendererFull.render(sceneFull, cameraFull);
+      }
+    }
+
+    function reset3DCamera() {
+      if (cameraFull) {
+        cameraFull.position.set(4, 4, 6);
+        cameraFull.lookAt(0, 0, 0);
+        if (rendererFull && sceneFull) {
+          rendererFull.render(sceneFull, cameraFull);
+        }
+      }
+    }
+
+    /* ==========================================================================
+       5. DASHBOARD UI DISPATCHER & MODAL SENSOR DRILLDOWN
+       ========================================================================== */
+    document.querySelectorAll(".nav-tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".nav-tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+        
+        tab.classList.add("active");
+        const target = document.getElementById(`tab-${tab.dataset.tab}`);
+        if (target) {
+          target.classList.add("active");
+        }
+
+        setTimeout(() => {
+          onWindowResize();
+          Object.values(chartInstances).forEach(c => c.resize());
+        }, 50);
+      });
+    });
+
+    function renderDashboardUI() {
+      const d = window.AstraState.current;
+      const s = window.AstraState.stats;
+
+      document.getElementById("packetBadge").textContent = `PACKETS: ${d.packetCount}`;
+      
+      const telemBadge = document.getElementById("telemStatus");
+      telemBadge.textContent = "TELEMETRY: LIVE";
+      telemBadge.className = "status-badge live";
+      
+      document.getElementById("footerConnection").textContent = "SYNCHRONIZED (1 Hz)";
+
+      // Primary Metric Cards
+      document.getElementById("val-temp").innerHTML = `${d.temperature.toFixed(2)} <span class="unit">°C</span>`;
+      document.getElementById("min-temp").textContent = s.temp.min === Infinity ? "0.0" : s.temp.min.toFixed(1);
+      document.getElementById("max-temp").textContent = s.temp.max === -Infinity ? "0.0" : s.temp.max.toFixed(1);
+      document.getElementById("avg-temp").textContent = s.temp.count === 0 ? "0.0" : (s.temp.sum / s.temp.count).toFixed(1);
+
+      document.getElementById("val-hum").innerHTML = `${d.humidity.toFixed(1)} <span class="unit">%</span>`;
+      document.getElementById("min-hum").textContent = s.hum.min === Infinity ? "0.0" : s.hum.min.toFixed(1);
+      document.getElementById("max-hum").textContent = s.hum.max === -Infinity ? "0.0" : s.hum.max.toFixed(1);
+      document.getElementById("avg-hum").textContent = s.hum.count === 0 ? "0.0" : (s.hum.sum / s.hum.count).toFixed(1);
+
+      document.getElementById("val-pres").innerHTML = `${d.pressure.toFixed(2)} <span class="unit">hPa</span>`;
+      document.getElementById("min-pres").textContent = s.pres.min === Infinity ? "0.0" : s.pres.min.toFixed(1);
+      document.getElementById("max-pres").textContent = s.pres.max === -Infinity ? "0.0" : s.pres.max.toFixed(1);
+      document.getElementById("avg-pres").textContent = s.pres.count === 0 ? "0.0" : (s.pres.sum / s.pres.count).toFixed(1);
+
+      document.getElementById("val-roll").textContent = `${d.roll.toFixed(2)}°`;
+      document.getElementById("val-pitch").textContent = `${d.pitch.toFixed(2)}°`;
+      document.getElementById("val-accelZ").textContent = d.accelZ.toFixed(2);
+
+      document.getElementById("val-lat").textContent = d.latitude.toFixed(6);
+      document.getElementById("val-lng").textContent = d.longitude.toFixed(6);
+      document.getElementById("val-alt").textContent = `${d.altitude.toFixed(1)} m`;
+      document.getElementById("val-sats").textContent = d.satellites;
+
+      document.getElementById("val-solar").innerHTML = `${d.vSolar.toFixed(2)} <span class="unit">V</span>`;
+
+      // Flight Dynamics Tab
+      document.getElementById("full-roll").textContent = `${d.roll.toFixed(2)}°`;
+      document.getElementById("full-pitch").textContent = `${d.pitch.toFixed(2)}°`;
+      document.getElementById("full-ax").textContent = `${d.accelX.toFixed(3)} g`;
+      document.getElementById("full-ay").textContent = `${d.accelY.toFixed(3)} g`;
+      document.getElementById("full-az").textContent = `${d.accelZ.toFixed(3)} g`;
+      document.getElementById("full-gx").textContent = `${d.gyroX.toFixed(2)} °/s`;
+      document.getElementById("full-gy").textContent = `${d.gyroY.toFixed(2)} °/s`;
+      document.getElementById("full-gz").textContent = `${d.gyroZ.toFixed(2)} °/s`;
+
+      // GPS Tab
+      document.getElementById("gps-lat").textContent = `${d.latitude.toFixed(6)}°`;
+      document.getElementById("gps-lng").textContent = `${d.longitude.toFixed(6)}°`;
+      document.getElementById("gps-alt").textContent = `${d.altitude.toFixed(1)} m`;
+      document.getElementById("gps-speed").textContent = `${d.speed.toFixed(2)} km/h`;
+      document.getElementById("gps-sats").textContent = d.satellites;
+      document.getElementById("gps-fix-state").textContent = d.gpsFix ? "3D EPHEMERIS FIX" : "NO FIX";
+
+      // Status Badges
+      updateBadge("badge-temp", d.sensorStatus.bmp || d.sensorStatus.dht);
+      updateBadge("badge-hum", d.sensorStatus.dht);
+      updateBadge("badge-pres", d.sensorStatus.bmp);
+      updateBadge("badge-mpu", d.sensorStatus.mpu);
+      
+      const gpsBadge = document.getElementById("badge-gps");
+      if (d.gpsFix) {
+        gpsBadge.className = "badge badge-online";
+        gpsBadge.textContent = "LOCKED";
+      } else {
+        gpsBadge.className = "badge badge-error";
+        gpsBadge.textContent = "NO FIX";
+      }
+
+      // Health Table Rows
+      document.getElementById("health-rf").textContent = "LINK ACTIVE";
+      document.getElementById("health-rf").className = "badge-online";
+      document.getElementById("health-rf-desc").textContent = `ESP-NOW Packet ID #${d.packetCount}`;
+
+      setHealthRow("health-bmp", "health-bmp-desc", d.sensorStatus.bmp, "I2C ACK (0x76/0x77)");
+      setHealthRow("health-dht", "health-dht-desc", d.sensorStatus.dht, "1-Wire ACK (GPIO 4)");
+      setHealthRow("health-mpu", "health-mpu-desc", d.sensorStatus.mpu, "WHO_AM_I 0x68 OK");
+      setHealthRow("health-gps", "health-gps-desc", d.gpsFix, d.gpsFix ? `${d.satellites} Sats in Lock` : "Awaiting Satellite Constellation");
+    }
+
+    function updateBadge(id, isHealthy) {
+      const el = document.getElementById(id);
+      if (isHealthy) {
+        el.className = "badge badge-online";
+        el.textContent = "HEALTHY";
+      } else {
+        el.className = "badge badge-error";
+        el.textContent = "OFFLINE";
+      }
+    }
+
+    function setHealthRow(statusId, descId, isHealthy, successText) {
+      const s = document.getElementById(statusId);
+      const d = document.getElementById(descId);
+      if (isHealthy) {
+        s.textContent = "ONLINE";
+        s.className = "badge-online";
+        d.textContent = successText;
+      } else {
+        s.textContent = "FAULT";
+        s.className = "badge-error";
+        d.textContent = "Sensor unresponsive";
+      }
+    }
+
+    // Modal Drilldown
+    let modalChartInstance = null;
+
+    function openDetail(sensorKey) {
+      const modal = document.getElementById("sensorDetailModal");
+      const title = document.getElementById("modalTitle");
+      const metric = document.getElementById("modalMetric");
+      const stats = document.getElementById("modalStats");
+      const history = window.AstraState.history;
+
+      modal.classList.remove("hidden");
+
+      let label = "";
+      let unit = "";
+      let points = [];
+
+      if (sensorKey === "temp") {
+        label = "TEMPERATURE PROFILE";
+        unit = "°C";
+        metric.textContent = `${window.AstraState.current.temperature.toFixed(2)} ${unit}`;
+        points = history.map(h => ({ x: h.timestamp, y: h.data.temperature }));
+      } else if (sensorKey === "hum") {
+        label = "RELATIVE HUMIDITY PROFILE";
+        unit = "%";
+        metric.textContent = `${window.AstraState.current.humidity.toFixed(1)} ${unit}`;
+        points = history.map(h => ({ x: h.timestamp, y: h.data.humidity }));
+      } else if (sensorKey === "pres") {
+        label = "ATMOSPHERIC PRESSURE PROFILE";
+        unit = "hPa";
+        metric.textContent = `${window.AstraState.current.pressure.toFixed(2)} ${unit}`;
+        points = history.map(h => ({ x: h.timestamp, y: h.data.pressure }));
+      } else {
+        label = "INERTIAL DYNAMICS";
+        metric.textContent = `ROLL: ${window.AstraState.current.roll.toFixed(1)}° | PITCH: ${window.AstraState.current.pitch.toFixed(1)}°`;
+        points = history.map(h => ({ x: h.timestamp, y: h.data.roll }));
+      }
+
+      title.textContent = label;
+      stats.textContent = `SAMPLES RECORDED: ${points.length} | TIME HORIZON: 15 MINUTES`;
+
+      if (modalChartInstance) {
+        modalChartInstance.destroy();
+      }
+
+      modalChartInstance = new Chart(document.getElementById("modalChart"), {
+        type: 'line',
+        data: {
+          datasets: [{
+            label: label,
+            borderColor: '#00e5ff',
+            borderWidth: 2,
+            data: points,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'linear',
+              grid: { color: '#141f3d' },
+              ticks: {
+                color: '#798bb4',
+                callback: (v) => new Date(v).toTimeString().substring(3, 8)
+              }
+            },
+            y: {
+              grid: { color: '#141f3d' },
+              ticks: { color: '#798bb4' }
+            }
+          }
+        }
+      });
+    }
+
+    function closeDetail() {
+      document.getElementById("sensorDetailModal").classList.add("hidden");
+      if (modalChartInstance) {
+        modalChartInstance.destroy();
+        modalChartInstance = null;
+      }
+    }
+
+    // Independent UTC Clock
+    setInterval(() => {
+      const now = new Date();
+      document.getElementById("missionClock").textContent = `${now.toISOString().substring(11, 19)} UTC`;
+    }, 1000);
+
+    // Initialization
+    window.addEventListener("DOMContentLoaded", () => {
+      initCharts();
+      init3D();
+    });
+  </script>
+</body>
+</html>
